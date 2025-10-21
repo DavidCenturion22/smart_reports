@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(cmd /c:*)",
+      "Bash(tasklist)",
+      "Bash(taskkill:*)",
+      "Bash(pip install:*)",
+      "Bash(dir:*)",
+      "Bash(pyinstaller build_exe.spec --clean --noconfirm)",
+      "Bash(awk '{print $9, \"\"\"\"(\"\"\"\" $5 \"\"\"\")\"\"\"\"}')"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

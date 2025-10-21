@@ -1,0 +1,24 @@
+[DATABASE]
+path = data/instituto_hp.db
+backup_enabled = true
+backup_days = 7
+
+[APPLICATION]
+name = Smart Reports - Instituto HP
+version = 1.0.0
+debug_mode = false
+
+[PATHS]
+uploads = data/uploads
+reports = reports
+logs = logs
+backups = backups
+
+[UNIDADES]
+1 = LCIT
+2 = LCT
+3 = TNG
+4 = EIT
+5 = TIMSA
+6 = PIT
+7 = TILH

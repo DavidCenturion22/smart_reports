@@ -119,40 +119,29 @@ class MainWindow:
                          font=('Arial', 20, 'bold'))
         title.pack(pady=10)
 
-        subtitle = ttk.Label(main_frame, text="Subtitulo",
-                           font=('Arial', 12))
-        subtitle.pack()
+        # Frame de estado unificado
+        status_frame = ttk.Frame(main_frame)
+        status_frame.pack(pady=20)
 
-        # Frame de estados
-        states_frame = ttk.Frame(main_frame)
-        states_frame.pack(pady=20)
-
-        # Botones de estado
-        states = [
-            ("Completado", 'success'),
-            ("En proceso", 'warning'),
-            ("Finalizado", 'info')
-        ]
-
-        for text, style in states:
-            btn = ttk.Button(states_frame, text=text,
-                           bootstyle=style,
-                           width=15)
-            btn.pack(side=LEFT, padx=10)
+        # Botón unificado para ver estadísticas
+        ttk.Button(status_frame, text="Ver Estadísticas de Progreso",
+                  command=self.show_progress_stats,
+                  bootstyle='primary',
+                  width=30).pack(pady=10)
 
         # Botones de acción
         actions_frame = ttk.Frame(main_frame)
         actions_frame.pack(pady=20)
 
-        ttk.Button(actions_frame, text="Correos",
+        ttk.Button(actions_frame, text="Actualizar Correos",
                   command=self.update_emails,
                   bootstyle='dark',
-                  width=15).pack(side=LEFT, padx=10)
+                  width=20).pack(side=LEFT, padx=10)
 
-        ttk.Button(actions_frame, text="Usuarios",
+        ttk.Button(actions_frame, text="Actualizar Usuarios",
                   command=self.update_users,
                   bootstyle='dark',
-                  width=15).pack(side=LEFT, padx=10)
+                  width=20).pack(side=LEFT, padx=10)
 
         # Panel de movimientos
         movements_frame = ttk.LabelFrame(main_frame, text="Panel de movimientos",
@@ -205,41 +194,77 @@ class MainWindow:
         search_frame = ttk.Frame(main_frame)
         search_frame.pack(pady=20)
 
-        ttk.Label(search_frame, text="Buscar:").pack(side=LEFT, padx=5)
+        # Buscar Usuario por ID
+        ttk.Label(search_frame, text="Buscar Usuario por ID:").pack(side=LEFT, padx=5)
         self.search_entry = ttk.Entry(search_frame, width=30)
         self.search_entry.pack(side=LEFT, padx=5)
+        ttk.Button(search_frame, text="Buscar",
+                  command=self.search_user_by_id,
+                  bootstyle='info').pack(side=LEFT, padx=5)
 
-        # Botones de consulta rápida
+        # Frame para Unidad de Negocio
+        unit_frame = ttk.Frame(main_frame)
+        unit_frame.pack(pady=10)
+
+        ttk.Label(unit_frame, text="Consultar Unidad de Negocio:").pack(side=LEFT, padx=5)
+
+        # Combobox para unidades de negocio
+        self.business_unit_var = tk.StringVar()
+        self.business_unit_combo = ttk.Combobox(unit_frame,
+                                               textvariable=self.business_unit_var,
+                                               width=40,
+                                               state='readonly')
+        self.business_unit_combo.pack(side=LEFT, padx=5)
+
+        # Cargar unidades de negocio
+        self.load_business_units()
+
+        ttk.Button(unit_frame, text="Consultar",
+                  command=self.query_business_unit_from_combo,
+                  bootstyle='info').pack(side=LEFT, padx=5)
+
+        # Frame para otros botones
         quick_buttons_frame = ttk.Frame(main_frame)
         quick_buttons_frame.pack(pady=10)
 
-        queries = [
-            ("Buscar Usuario por ID", self.search_user_by_id),
-            ("Consultar Unidad de Negocio", self.query_business_unit),
-            ("Estado de Modulos", self.query_module_status),
-            ("Usuarios Nuevos", self.query_new_users)
-        ]
+        ttk.Button(quick_buttons_frame, text="Usuarios Nuevos (Últimos 30 días)",
+                  command=self.query_new_users,
+                  bootstyle='info').pack(side=LEFT, padx=5)
 
-        for text, command in queries:
-            ttk.Button(quick_buttons_frame, text=text,
-                      command=command,
-                      bootstyle='info').pack(side=LEFT, padx=5)
-
-        # Área de resultados
+        # Área de resultados con mejor formato
         results_frame = ttk.LabelFrame(main_frame, text="Resultados",
                                      padding=10)
         results_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
 
-        # Treeview para mostrar resultados
-        self.results_tree = ttk.Treeview(results_frame, columns=(),
-                                        show='tree headings')
-        self.results_tree.pack(fill=BOTH, expand=True)
+        # Frame contenedor para tabla y scrollbars
+        table_container = ttk.Frame(results_frame)
+        table_container.pack(fill=BOTH, expand=True)
 
         # Scrollbars
-        vsb = ttk.Scrollbar(results_frame, orient="vertical",
-                          command=self.results_tree.yview)
-        vsb.pack(side=RIGHT, fill=Y)
-        self.results_tree.configure(yscrollcommand=vsb.set)
+        vsb = ttk.Scrollbar(table_container, orient="vertical")
+        hsb = ttk.Scrollbar(table_container, orient="horizontal")
+
+        # Treeview para mostrar resultados con mejor estilo
+        self.results_tree = ttk.Treeview(table_container,
+                                        columns=(),
+                                        show='headings',  # Solo headers, sin columna tree
+                                        yscrollcommand=vsb.set,
+                                        xscrollcommand=hsb.set)
+
+        vsb.config(command=self.results_tree.yview)
+        hsb.config(command=self.results_tree.xview)
+
+        # Grid layout para tabla y scrollbars
+        self.results_tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
+
+        table_container.grid_rowconfigure(0, weight=1)
+        table_container.grid_columnconfigure(0, weight=1)
+
+        # Configurar estilo de filas alternadas
+        self.results_tree.tag_configure('oddrow', background='#f0f0f0')
+        self.results_tree.tag_configure('evenrow', background='white')
 
     def show_configuracion_panel(self):
         """Panel de configuración"""
@@ -444,43 +469,68 @@ class MainWindow:
         else:
             messagebox.showinfo("Sin resultados", "Usuario no encontrado")
 
-    def query_business_unit(self):
-        """Consultar unidad de negocio"""
-        unit = self.search_entry.get()
+    def load_business_units(self):
+        """Cargar unidades de negocio en el combobox"""
+        try:
+            self.cursor.execute("""
+                SELECT NombreUnidad FROM instituto_UnidadDeNegocio
+                ORDER BY NombreUnidad
+            """)
+            units = [row[0] for row in self.cursor.fetchall()]
+            self.business_unit_combo['values'] = units
+            if units:
+                self.business_unit_combo.current(0)
+        except Exception as e:
+            print(f"Error cargando unidades: {e}")
+
+    def query_business_unit_from_combo(self):
+        """Consultar unidad de negocio desde el combobox"""
+        unit = self.business_unit_var.get()
         if not unit:
-            messagebox.showwarning("Advertencia", "Ingrese una unidad de negocio")
+            messagebox.showwarning("Advertencia", "Seleccione una unidad de negocio")
             return
 
         self.cursor.execute("""
             SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Division, u.FechaRegistro, u.Activo
             FROM instituto_Usuario u
             LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            WHERE un.NombreUnidad LIKE ?
-        """, (f'%{unit}%',))
+            WHERE un.NombreUnidad = ?
+            ORDER BY u.Nombre
+        """, (unit,))
 
         results = self.cursor.fetchall()
         if results:
             self.display_search_results(results,
                 ['ID', 'Nombre', 'Email', 'Unidad', 'Division', 'Fecha Reg', 'Activo'])
         else:
-            messagebox.showinfo("Sin resultados", "No se encontraron usuarios")
+            messagebox.showinfo("Sin resultados", f"No se encontraron usuarios en {unit}")
 
-    def query_module_status(self):
-        """Consultar estado de módulos"""
-        self.cursor.execute("""
-            SELECT m.NombreModulo,
-                   COUNT(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 END) as completados,
-                   COUNT(CASE WHEN pm.EstatusModuloUsuario = 'En proceso' THEN 1 END) as en_proceso,
-                   COUNT(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 END) as registrados
-            FROM instituto_Modulo m
-            LEFT JOIN instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
-            GROUP BY m.IdModulo, m.NombreModulo
-        """)
+    def show_progress_stats(self):
+        """Mostrar estadísticas de progreso"""
+        try:
+            self.cursor.execute("""
+                SELECT
+                    COUNT(CASE WHEN EstatusModuloUsuario = 'Completado' THEN 1 END) as Completados,
+                    COUNT(CASE WHEN EstatusModuloUsuario = 'En proceso' THEN 1 END) as EnProceso,
+                    COUNT(CASE WHEN EstatusModuloUsuario = 'Registrado' THEN 1 END) as Registrados,
+                    COUNT(*) as Total
+                FROM instituto_ProgresoModulo
+            """)
+            result = self.cursor.fetchone()
 
-        results = self.cursor.fetchall()
-        if results:
-            self.display_search_results(results,
-                ['Modulo', 'Completados', 'En Proceso', 'Registrados'])
+            if result:
+                msg = f"""Estadísticas de Progreso de Módulos:
+
+Completados: {result[0]}
+En Proceso: {result[1]}
+Registrados: {result[2]}
+Total de Inscripciones: {result[3]}
+
+Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
+"""
+                messagebox.showinfo("Estadísticas", msg)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al obtener estadísticas: {str(e)}")
 
     def query_new_users(self):
         """Consultar usuarios nuevos"""
@@ -500,20 +550,39 @@ class MainWindow:
             messagebox.showinfo("Sin resultados", "No hay usuarios nuevos en los ultimos 30 dias")
 
     def display_search_results(self, results, columns):
-        """Mostrar resultados en el treeview"""
+        """Mostrar resultados en el treeview con formato mejorado"""
         # Limpiar treeview
         for item in self.results_tree.get_children():
             self.results_tree.delete(item)
 
         # Configurar columnas
         self.results_tree['columns'] = columns
-        for col in columns:
-            self.results_tree.heading(col, text=col)
-            self.results_tree.column(col, width=100)
 
-        # Insertar resultados
-        for row in results:
-            self.results_tree.insert('', tk.END, values=row)
+        # Configurar cada columna con ancho automático y alineación
+        for col in columns:
+            self.results_tree.heading(col, text=col, anchor='center')
+            # Ancho basado en el contenido
+            max_width = len(col) * 10  # Ancho mínimo basado en el header
+
+            # Calcular ancho máximo basado en contenido
+            for row in results:
+                col_index = columns.index(col)
+                if col_index < len(row):
+                    cell_value = str(row[col_index]) if row[col_index] is not None else ''
+                    cell_width = len(cell_value) * 8
+                    max_width = max(max_width, cell_width)
+
+            # Establecer ancho (mínimo 100, máximo 300)
+            max_width = min(max(max_width, 100), 300)
+            self.results_tree.column(col, width=max_width, anchor='center', minwidth=80)
+
+        # No mostrar la columna tree
+        self.results_tree.column('#0', width=0, stretch=False)
+
+        # Insertar resultados con filas alternadas
+        for idx, row in enumerate(results):
+            tag = 'evenrow' if idx % 2 == 0 else 'oddrow'
+            self.results_tree.insert('', tk.END, values=row, tags=(tag,))
 
     def add_new_user_dialog(self):
         """Diálogo para agregar nuevo usuario"""

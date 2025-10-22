@@ -55,41 +55,86 @@ class TranscriptProcessor:
     def normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Normaliza los nombres de columnas a un formato estándar
+        Busca flexiblemente las columnas en el Excel
         """
-        column_mapping = {
-            # Español
-            'Nombre completo del usuario': 'nombre_usuario',
-            'Identificación de usuario': 'id_usuario',
-            'Título de la capacitación': 'titulo_modulo',
-            'Versión de capacitación': 'version',
-            'Tipo de capacitación': 'tipo',
-            'Proveedor de capacitación': 'proveedor',
-            'Estado del expediente': 'estado',
-            'Fecha de registro de la transcripción': 'fecha_registro',
-            'Fecha de inicio de la capacitación': 'fecha_inicio',
-            'Fecha de finalización de expediente': 'fecha_fin',
-            'Fecha asignada del expediente': 'fecha_asignada',
-            'Horas de capacitación': 'horas',
-            'Créditos de las aptitudes': 'creditos',
+        # Crear un mapeo flexible - buscar columnas que contengan estas palabras clave
+        normalized_df = df.copy()
+        column_map = {}
 
-            # Inglés (si el archivo está en inglés)
-            'User Name': 'nombre_usuario',
-            'User ID': 'id_usuario',
-            'Training Title': 'titulo_modulo',
-            'Training Version': 'version',
-            'Training Type': 'tipo',
-            'Training Provider': 'proveedor',
-            'Transcript Status': 'estado',
-            'Transcript Registration Date': 'fecha_registro',
-            'Training Start Date': 'fecha_inicio',
-            'Transcript Completed Date': 'fecha_fin',
-            'Transcript Assigned Date': 'fecha_asignada',
-            'Training Hours': 'horas',
-            'Credits': 'creditos'
-        }
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
 
-        df.rename(columns=column_mapping, inplace=True)
-        return df
+            # Identificación de usuario / User ID
+            if 'identificación' in col_lower and 'usuario' in col_lower:
+                column_map[col] = 'id_usuario'
+            elif col_lower == 'user id':
+                column_map[col] = 'id_usuario'
+
+            # Nombre completo del usuario / User Name
+            elif 'nombre completo' in col_lower:
+                column_map[col] = 'nombre_usuario'
+            elif col_lower == 'user name':
+                column_map[col] = 'nombre_usuario'
+
+            # Título de la capacitación / Training Title
+            elif 'título' in col_lower and 'capacitación' in col_lower:
+                column_map[col] = 'titulo_modulo'
+            elif col_lower == 'training title':
+                column_map[col] = 'titulo_modulo'
+
+            # Estado del expediente / Transcript Status
+            elif 'estado' in col_lower and 'expediente' in col_lower:
+                column_map[col] = 'estado'
+            elif col_lower == 'transcript status':
+                column_map[col] = 'estado'
+
+            # Fechas
+            elif 'fecha' in col_lower and 'inicio' in col_lower:
+                column_map[col] = 'fecha_inicio'
+            elif col_lower == 'training start date':
+                column_map[col] = 'fecha_inicio'
+
+            elif 'fecha' in col_lower and 'finalización' in col_lower:
+                column_map[col] = 'fecha_fin'
+            elif col_lower == 'transcript completed date':
+                column_map[col] = 'fecha_fin'
+
+            elif 'fecha' in col_lower and 'registro' in col_lower:
+                column_map[col] = 'fecha_registro'
+            elif col_lower == 'transcript registration date':
+                column_map[col] = 'fecha_registro'
+
+            # Otros campos
+            elif 'versión' in col_lower:
+                column_map[col] = 'version'
+            elif col_lower == 'training version':
+                column_map[col] = 'version'
+
+            elif 'tipo' in col_lower and 'capacitación' in col_lower:
+                column_map[col] = 'tipo'
+            elif col_lower == 'training type':
+                column_map[col] = 'tipo'
+
+            elif 'proveedor' in col_lower:
+                column_map[col] = 'proveedor'
+            elif col_lower == 'training provider':
+                column_map[col] = 'proveedor'
+
+        # Aplicar el mapeo
+        normalized_df.rename(columns=column_map, inplace=True)
+
+        # Verificar que tenemos las columnas mínimas requeridas
+        required = ['id_usuario', 'titulo_modulo', 'estado']
+        missing = [col for col in required if col not in normalized_df.columns]
+
+        if missing:
+            # Mostrar columnas disponibles para debugging
+            print(f"Columnas originales del archivo: {list(df.columns)}")
+            print(f"Columnas después del mapeo: {list(normalized_df.columns)}")
+            print(f"Columnas faltantes: {missing}")
+            raise ValueError(f"Columnas requeridas no encontradas después del mapeo: {missing}")
+
+        return normalized_df
 
     def convert_excel_date(self, excel_date) -> Optional[str]:
         """
@@ -127,11 +172,29 @@ class TranscriptProcessor:
     def normalize_status(self, status: str) -> str:
         """
         Normaliza los estados a valores estándar
+        MAPEO EXACTO según los estados del Excel:
+        - "Terminado" -> "Completado"
+        - "En Progreso" -> "En proceso"
+        - "Registrado" -> "Registrado"
         """
         if pd.isna(status):
             return 'No iniciado'
 
-        status = str(status).strip().lower()
+        status = str(status).strip()
+
+        # Mapeo exacto primero
+        exact_map = {
+            'Terminado': 'Completado',
+            'En Progreso': 'En proceso',
+            'Registrado': 'Registrado',
+        }
+
+        # Buscar coincidencia exacta primero
+        if status in exact_map:
+            return exact_map[status]
+
+        # Si no, buscar case-insensitive
+        status_lower = status.lower()
 
         status_map = {
             'terminado': 'Completado',
@@ -160,9 +223,11 @@ class TranscriptProcessor:
         }
 
         for key, value in status_map.items():
-            if key in status:
+            if key in status_lower:
                 return value
 
+        # Si no encuentra ningún match, retornar el estado original para debugging
+        print(f"ADVERTENCIA: Estado no reconocido: '{status}'")
         return 'No iniciado'  # Default
 
     def get_module_category(self, module_title: str) -> str:
@@ -212,39 +277,66 @@ class TranscriptProcessor:
         }
 
         try:
+            # Verificar que tenemos las columnas necesarias
+            required_cols = ['id_usuario', 'titulo_modulo', 'estado']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"Faltan columnas requeridas: {missing_cols}")
+
             # Procesar usuarios únicos
+            # Usar nombre_usuario si existe, si no usar id_usuario como nombre
+            if 'nombre_usuario' not in df.columns:
+                df['nombre_usuario'] = df['id_usuario']
+
             usuarios_df = df[['id_usuario', 'nombre_usuario']].drop_duplicates()
             self.stats['usuarios_unicos'] = len(usuarios_df)
 
             for _, user in usuarios_df.iterrows():
-                if pd.notna(user['id_usuario']) and pd.notna(user['nombre_usuario']):
+                if pd.notna(user['id_usuario']):
+                    nombre = user.get('nombre_usuario', user['id_usuario'])
+                    if pd.isna(nombre):
+                        nombre = str(user['id_usuario'])
                     self.process_user(
                         user_id=str(user['id_usuario']),
-                        nombre=user['nombre_usuario']
+                        nombre=str(nombre)
                     )
 
             # Procesar módulos únicos
-            modulos_df = df[['titulo_modulo', 'tipo', 'proveedor']].drop_duplicates()
+            # tipo y proveedor son opcionales
+            modulos_cols = ['titulo_modulo']
+            if 'tipo' in df.columns:
+                modulos_cols.append('tipo')
+            if 'proveedor' in df.columns:
+                modulos_cols.append('proveedor')
+
+            modulos_df = df[modulos_cols].drop_duplicates()
             self.stats['modulos_unicos'] = len(modulos_df)
 
             for _, modulo in modulos_df.iterrows():
                 if pd.notna(modulo['titulo_modulo']):
                     self.process_module(
                         titulo=modulo['titulo_modulo'],
-                        tipo=modulo.get('tipo'),
-                        proveedor=modulo.get('proveedor')
+                        tipo=modulo.get('tipo') if 'tipo' in modulo else None,
+                        proveedor=modulo.get('proveedor') if 'proveedor' in modulo else None
                     )
 
             # Procesar inscripciones (progreso de módulos)
-            for _, row in df.iterrows():
+            print(f"\nProcesando {len(df)} inscripciones...")
+            for idx, row in df.iterrows():
                 if pd.notna(row['id_usuario']) and pd.notna(row['titulo_modulo']):
                     self.process_inscription(row)
+                    if (idx + 1) % 100 == 0:
+                        print(f"  Procesadas {idx + 1}/{len(df)} inscripciones...")
 
             self.conn.commit()
+            print(f"✓ Procesamiento completado exitosamente!")
 
         except Exception as e:
             self.conn.rollback()
             self.stats['errores'].append(str(e))
+            print(f"✗ Error durante el procesamiento: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise e
 
         return self.stats

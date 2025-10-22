@@ -255,7 +255,7 @@ class TranscriptProcessor:
         """
         try:
             # Verificar si el usuario existe
-            self.cursor.execute("SELECT UserId FROM Usuario WHERE UserId = ?", (user_id,))
+            self.cursor.execute("SELECT UserId FROM instituto_Usuario WHERE UserId = ?", (user_id,))
 
             if not self.cursor.fetchone():
                 # Extraer información adicional del nombre si es posible
@@ -263,7 +263,7 @@ class TranscriptProcessor:
 
                 # Insertar nuevo usuario
                 self.cursor.execute("""
-                    INSERT INTO Usuario (UserId, Nombre, Email, TipoDeCorreo)
+                    INSERT INTO instituto_Usuario (UserId, Nombre, Email, TipoDeCorreo)
                     VALUES (?, ?, ?, 'Corporativo')
                 """, (user_id, nombre, email))
 
@@ -281,7 +281,7 @@ class TranscriptProcessor:
         """
         try:
             # Buscar si el módulo ya existe
-            self.cursor.execute("SELECT IdModulo FROM Modulo WHERE NombreModulo = ?", (titulo,))
+            self.cursor.execute("SELECT IdModulo FROM instituto_Modulo WHERE NombreModulo = ?", (titulo,))
             result = self.cursor.fetchone()
 
             if result:
@@ -292,7 +292,7 @@ class TranscriptProcessor:
             descripcion = f"Tipo: {tipo or 'N/A'}\nProveedor: {proveedor or 'Instituto HP'}\nCategoría: {categoria}"
 
             self.cursor.execute("""
-                INSERT INTO Modulo (NombreModulo, DescripcionModulo, FechaDeAsignacion)
+                INSERT INTO instituto_Modulo (NombreModulo, DescripcionModulo, FechaDeAsignacion)
                 VALUES (?, ?, GETDATE())
             """, (titulo, descripcion))
 
@@ -321,7 +321,7 @@ class TranscriptProcessor:
             fecha_fin = self.convert_excel_date(row.get('fecha_fin'))
 
             # Obtener ID del módulo
-            self.cursor.execute("SELECT IdModulo FROM Modulo WHERE NombreModulo = ?", (titulo_modulo,))
+            self.cursor.execute("SELECT IdModulo FROM instituto_Modulo WHERE NombreModulo = ?", (titulo_modulo,))
             result = self.cursor.fetchone()
 
             if not result:
@@ -333,7 +333,7 @@ class TranscriptProcessor:
             if module_id > 0:
                 # Verificar si ya existe la inscripción
                 self.cursor.execute("""
-                    SELECT IdInscripcion FROM ProgresoModulo
+                    SELECT IdInscripcion FROM instituto_ProgresoModulo
                     WHERE UserId = ? AND IdModulo = ?
                 """, (user_id, module_id))
 
@@ -342,14 +342,14 @@ class TranscriptProcessor:
                 if existing:
                     # Actualizar inscripción existente
                     self.cursor.execute("""
-                        UPDATE ProgresoModulo
+                        UPDATE instituto_ProgresoModulo
                         SET EstatusModuloUsuario = ?, FechaFinalizacion = ?, FechaUltimaActualizacion = GETDATE()
                         WHERE UserId = ? AND IdModulo = ?
                     """, (estado, fecha_fin, user_id, module_id))
                 else:
                     # Insertar nueva inscripción
                     self.cursor.execute("""
-                        INSERT INTO ProgresoModulo
+                        INSERT INTO instituto_ProgresoModulo
                         (UserId, IdModulo, EstatusModuloUsuario, FechaInicio, FechaFinalizacion)
                         VALUES (?, ?, ?, ?, ?)
                     """, (user_id, module_id, estado, fecha_inicio, fecha_fin))
@@ -369,26 +369,26 @@ class TranscriptProcessor:
         stats = {}
 
         # Total de usuarios
-        self.cursor.execute("SELECT COUNT(*) FROM Usuario")
+        self.cursor.execute("SELECT COUNT(*) FROM instituto_Usuario")
         stats['total_usuarios'] = self.cursor.fetchone()[0]
 
         # Total de módulos
-        self.cursor.execute("SELECT COUNT(*) FROM Modulo")
+        self.cursor.execute("SELECT COUNT(*) FROM instituto_Modulo")
         stats['total_modulos'] = self.cursor.fetchone()[0]
 
         # Estados de progreso
         self.cursor.execute("""
             SELECT EstatusModuloUsuario, COUNT(*)
-            FROM ProgresoModulo
+            FROM instituto_ProgresoModulo
             GROUP BY EstatusModuloUsuario
         """)
         stats['estados'] = dict(self.cursor.fetchall())
 
         # Usuarios por unidad de negocio
         self.cursor.execute("""
-            SELECT un.NombreUnidad, COUNT(u.IdUsuario)
-            FROM UnidadDeNegocio un
-            LEFT JOIN Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            SELECT un.NombreUnidad, COUNT(u.UserId)
+            FROM instituto_UnidadDeNegocio un
+            LEFT JOIN instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
             GROUP BY un.IdUnidadDeNegocio, un.NombreUnidad
         """)
         stats['usuarios_por_unidad'] = dict(self.cursor.fetchall())
@@ -414,8 +414,8 @@ class ReportGenerator:
                 pm.CalificacionModuloUsuario,
                 pm.FechaInicio,
                 pm.FechaFinalizacion
-            FROM ProgresoModulo pm
-            JOIN Modulo m ON pm.IdModulo = m.IdModulo
+            FROM instituto_ProgresoModulo pm
+            JOIN instituto_Modulo m ON pm.IdModulo = m.IdModulo
             WHERE pm.UserId = ?
             ORDER BY pm.FechaInicio DESC
         """
@@ -435,8 +435,8 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioCalificacion
-            FROM Modulo m
-            LEFT JOIN ProgresoModulo pm ON m.IdModulo = pm.IdModulo
+            FROM instituto_Modulo m
+            LEFT JOIN instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
             GROUP BY m.IdModulo, m.NombreModulo
             ORDER BY TotalUsuarios DESC
         """
@@ -450,14 +450,14 @@ class ReportGenerator:
         query = """
             SELECT
                 un.NombreUnidad,
-                COUNT(DISTINCT u.IdUsuario) as TotalUsuarios,
+                COUNT(DISTINCT u.UserId) as TotalUsuarios,
                 COUNT(DISTINCT pm.IdModulo) as ModulosActivos,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as ModulosCompletados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioGeneral
-            FROM UnidadDeNegocio un
-            LEFT JOIN Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
-            LEFT JOIN ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM instituto_UnidadDeNegocio un
+            LEFT JOIN instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
         """
 
         if unit_id:
@@ -476,7 +476,7 @@ class ReportGenerator:
                 CAST(FechaFinalizacion AS DATE) as Fecha,
                 COUNT(*) as ModulosCompletados,
                 COUNT(DISTINCT UserId) as UsuariosActivos
-            FROM ProgresoModulo
+            FROM instituto_ProgresoModulo
             WHERE EstatusModuloUsuario = 'Completado'
                 AND FechaFinalizacion >= DATEADD(day, -{days}, GETDATE())
             GROUP BY CAST(FechaFinalizacion AS DATE)

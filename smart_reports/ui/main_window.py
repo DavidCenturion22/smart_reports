@@ -44,7 +44,7 @@ class MainWindow:
 
     def verify_database_tables(self):
         """Verificar que las tablas necesarias existan"""
-        tables_needed = ['UnidadDeNegocio', 'Usuario', 'Modulo', 'ProgresoModulo', 'Soporte']
+        tables_needed = ['instituto_UnidadDeNegocio', 'instituto_Usuario', 'instituto_Modulo', 'instituto_ProgresoModulo']
         placeholders = ','.join(['?' for _ in tables_needed])
 
         try:
@@ -60,7 +60,7 @@ class MainWindow:
                 missing = set(tables_needed) - set(existing_tables)
                 messagebox.showwarning("Advertencia",
                     f"Faltan tablas en la BD: {', '.join(missing)}\n" +
-                    "Ejecute init_database.py para crear la estructura completa.")
+                    "Verifique que las tablas existan en la base de datos.")
         except Exception as e:
             print(f"Error verificando tablas: {e}")
 
@@ -430,9 +430,9 @@ class MainWindow:
                 u.Nivel,
                 COUNT(DISTINCT pm.IdModulo) as TotalModulos,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
-            FROM Usuario u
-            LEFT JOIN UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM instituto_Usuario u
+            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE u.UserId = ?
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Nivel
         """, (user_id,))
@@ -453,8 +453,8 @@ class MainWindow:
 
         self.cursor.execute("""
             SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Division, u.FechaRegistro, u.Activo
-            FROM Usuario u
-            LEFT JOIN UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            FROM instituto_Usuario u
+            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             WHERE un.NombreUnidad LIKE ?
         """, (f'%{unit}%',))
 
@@ -472,8 +472,8 @@ class MainWindow:
                    COUNT(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 END) as completados,
                    COUNT(CASE WHEN pm.EstatusModuloUsuario = 'En proceso' THEN 1 END) as en_proceso,
                    COUNT(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 END) as registrados
-            FROM Modulo m
-            LEFT JOIN ProgresoModulo pm ON m.IdModulo = pm.IdModulo
+            FROM instituto_Modulo m
+            LEFT JOIN instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
             GROUP BY m.IdModulo, m.NombreModulo
         """)
 
@@ -486,8 +486,8 @@ class MainWindow:
         """Consultar usuarios nuevos"""
         self.cursor.execute("""
             SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Division, u.FechaRegistro, u.Activo
-            FROM Usuario u
-            LEFT JOIN UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            FROM instituto_Usuario u
+            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -30, GETDATE())
             ORDER BY u.FechaRegistro DESC
         """)
@@ -545,14 +545,14 @@ class MainWindow:
                     id_unidad = None
                     if unidad_nombre:
                         self.cursor.execute("""
-                            SELECT IdUnidadDeNegocio FROM UnidadDeNegocio WHERE NombreUnidad = ?
+                            SELECT IdUnidadDeNegocio FROM instituto_UnidadDeNegocio WHERE NombreUnidad = ?
                         """, (unidad_nombre,))
                         result = self.cursor.fetchone()
                         if result:
                             id_unidad = result[0]
 
                     self.cursor.execute("""
-                        INSERT INTO Usuario (UserId, Nombre, Email, IdUnidadDeNegocio)
+                        INSERT INTO instituto_Usuario (UserId, Nombre, Email, IdUnidadDeNegocio)
                         VALUES (?, ?, ?, ?)
                     """, (user_id, nombre, email, id_unidad))
                     self.db.commit()
@@ -592,7 +592,7 @@ class MainWindow:
 
         # Cargar módulos existentes
         try:
-            self.cursor.execute("SELECT * FROM Modulo")
+            self.cursor.execute("SELECT * FROM instituto_Modulo")
             for row in self.cursor.fetchall():
                 tree.insert('', tk.END, values=row)
         except Exception as e:

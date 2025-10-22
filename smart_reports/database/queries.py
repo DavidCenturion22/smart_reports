@@ -14,7 +14,7 @@ class DatabaseQueries:
 
     def get_all_business_units(self):
         """Obtiene todas las unidades de negocio"""
-        query = "SELECT IdUnidadDeNegocio, NombreUnidad FROM UnidadDeNegocio ORDER BY NombreUnidad"
+        query = "SELECT IdUnidadDeNegocio, NombreUnidad FROM instituto_UnidadDeNegocio ORDER BY NombreUnidad"
         return self.db.execute(query)
 
     def get_users_by_business_unit(self, unit_id):
@@ -22,8 +22,8 @@ class DatabaseQueries:
         query = """
             SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad,
                    u.Division, u.Nivel, u.FechaRegistro, u.Activo
-            FROM Usuario u
-            INNER JOIN UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            FROM instituto_Usuario u
+            INNER JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             WHERE un.IdUnidadDeNegocio = ?
             ORDER BY u.Nombre
         """
@@ -33,7 +33,7 @@ class DatabaseQueries:
 
     def get_all_modules(self):
         """Obtiene todos los módulos"""
-        query = "SELECT IdModulo, NombreModulo FROM Modulo WHERE Activo = 1 ORDER BY NombreModulo"
+        query = "SELECT IdModulo, NombreModulo FROM instituto_Modulo WHERE Activo = 1 ORDER BY NombreModulo"
         return self.db.execute(query)
 
     def get_modules_by_status(self, module_id=None, statuses=None):
@@ -43,9 +43,9 @@ class DatabaseQueries:
                    pm.EstatusModuloUsuario as Estado,
                    pm.CalificacionModuloUsuario as Calificacion,
                    pm.FechaInicio, pm.FechaFinalizacion
-            FROM ProgresoModulo pm
-            INNER JOIN Modulo m ON pm.IdModulo = m.IdModulo
-            INNER JOIN Usuario u ON pm.UserId = u.UserId
+            FROM instituto_ProgresoModulo pm
+            INNER JOIN instituto_Modulo m ON pm.IdModulo = m.IdModulo
+            INNER JOIN instituto_Usuario u ON pm.UserId = u.UserId
             WHERE pm.EstatusModuloUsuario IN ({})
         """
 
@@ -69,8 +69,8 @@ class DatabaseQueries:
         query = """
             SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad,
                    u.Nivel, u.Division, u.FechaRegistro, u.Activo
-            FROM Usuario u
-            LEFT JOIN UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            FROM instituto_Usuario u
+            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             WHERE u.UserId = ?
         """
         return self.db.execute_one(query, (user_id,))
@@ -80,8 +80,8 @@ class DatabaseQueries:
         query = """
             SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad,
                    u.Division, u.FechaRegistro, u.Activo
-            FROM Usuario u
-            LEFT JOIN UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            FROM instituto_Usuario u
+            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -?, GETDATE())
             ORDER BY u.FechaRegistro DESC
         """
@@ -90,7 +90,7 @@ class DatabaseQueries:
     def insert_user(self, user_id, nombre, email, unit_id=None):
         """Inserta nuevo usuario"""
         query = """
-            INSERT INTO Usuario (UserId, Nombre, Email, IdUnidadDeNegocio)
+            INSERT INTO instituto_Usuario (UserId, Nombre, Email, IdUnidadDeNegocio)
             VALUES (?, ?, ?, ?)
         """
         cursor = self.db.get_cursor()
@@ -103,7 +103,7 @@ class DatabaseQueries:
         """Obtiene conteo de módulos por estado"""
         query = """
             SELECT EstatusModuloUsuario, COUNT(*) as Total
-            FROM ProgresoModulo
+            FROM instituto_ProgresoModulo
             GROUP BY EstatusModuloUsuario
         """
         return self.db.execute(query)
@@ -111,9 +111,9 @@ class DatabaseQueries:
     def get_users_by_unit_counts(self):
         """Obtiene conteo de usuarios por unidad"""
         query = """
-            SELECT un.NombreUnidad, COUNT(u.IdUsuario) as Total
-            FROM UnidadDeNegocio un
-            LEFT JOIN Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            SELECT un.NombreUnidad, COUNT(u.UserId) as Total
+            FROM instituto_UnidadDeNegocio un
+            LEFT JOIN instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
             GROUP BY un.NombreUnidad
             ORDER BY Total DESC
         """
@@ -124,7 +124,7 @@ class DatabaseQueries:
         query = """
             SELECT FORMAT(FechaFinalizacion, 'yyyy-MM') as Mes,
                    COUNT(*) as Completados
-            FROM ProgresoModulo
+            FROM instituto_ProgresoModulo
             WHERE EstatusModuloUsuario = 'Completado'
             AND FechaFinalizacion >= DATEADD(month, -?, GETDATE())
             GROUP BY FORMAT(FechaFinalizacion, 'yyyy-MM')
@@ -136,14 +136,14 @@ class DatabaseQueries:
 
     def update_user(self, user_id, column, new_value):
         """Actualiza un campo de usuario"""
-        query = f"UPDATE Usuario SET {column} = ? WHERE UserId = ?"
+        query = f"UPDATE instituto_Usuario SET {column} = ? WHERE UserId = ?"
         cursor = self.db.get_cursor()
         cursor.execute(query, (new_value, user_id))
         self.db.commit()
 
     def update_module_progress(self, inscription_id, column, new_value):
         """Actualiza progreso de módulo"""
-        query = f"UPDATE ProgresoModulo SET {column} = ? WHERE IdInscripcion = ?"
+        query = f"UPDATE instituto_ProgresoModulo SET {column} = ? WHERE IdInscripcion = ?"
         cursor = self.db.get_cursor()
         cursor.execute(query, (new_value, inscription_id))
         self.db.commit()
@@ -173,15 +173,15 @@ class DatabaseQueries:
         stats = {}
 
         # Total usuarios
-        result = self.db.execute_one("SELECT COUNT(*) FROM Usuario")
+        result = self.db.execute_one("SELECT COUNT(*) FROM instituto_Usuario")
         stats['total_users'] = result[0] if result else 0
 
         # Total módulos
-        result = self.db.execute_one("SELECT COUNT(*) FROM Modulo WHERE Activo = 1")
+        result = self.db.execute_one("SELECT COUNT(*) FROM instituto_Modulo WHERE Activo = 1")
         stats['total_modules'] = result[0] if result else 0
 
         # Total inscripciones
-        result = self.db.execute_one("SELECT COUNT(*) FROM ProgresoModulo")
+        result = self.db.execute_one("SELECT COUNT(*) FROM instituto_ProgresoModulo")
         stats['total_enrollments'] = result[0] if result else 0
 
         return stats

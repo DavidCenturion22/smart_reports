@@ -44,7 +44,7 @@ class MainWindow:
 
     def verify_database_tables(self):
         """Verificar que las tablas necesarias existan"""
-        tables_needed = ['dbo.UnidadDeNegocio', 'dbo.Instituto_Usuario', 'dbo.Modulo', 'dbo.ProgresoModulo']
+        tables_needed = ['dbo.Instituto_UnidadDeNegocio', 'dbo.Instituto_Usuario', 'dbo.Instituto_Modulo', 'dbo.Instituto_ProgresoModulo']
         placeholders = ','.join(['?' for _ in tables_needed])
 
         try:
@@ -720,9 +720,9 @@ class MainWindow:
                 CONVERT(VARCHAR(10), pm.FechaInicio, 103) as FechaAsignacion,
                 CONVERT(VARCHAR(10), pm.FechaFinalizacion, 103) as FechaFinalizacion
             FROM dbo.Instituto_Usuario u
-            LEFT JOIN dbo.UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
-            LEFT JOIN dbo.Modulo m ON pm.IdModulo = m.IdModulo
+            LEFT JOIN dbo.Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN dbo.Instituto_Modulo m ON pm.IdModulo = m.IdModulo
             WHERE u.UserId = ?
             ORDER BY m.NombreModulo
         """, (user_id,))
@@ -738,7 +738,7 @@ class MainWindow:
         """Cargar unidades de negocio en el combobox"""
         try:
             self.cursor.execute("""
-                SELECT NombreUnidad FROM dbo.UnidadDeNegocio
+                SELECT NombreUnidad FROM dbo.Instituto_UnidadDeNegocio
                 ORDER BY NombreUnidad
             """)
             units = [row[0] for row in self.cursor.fetchall()]
@@ -766,8 +766,8 @@ class MainWindow:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'En proceso' THEN 1 ELSE 0 END) as EnProceso,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados
             FROM dbo.Instituto_Usuario u
-            LEFT JOIN dbo.UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN dbo.Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE un.NombreUnidad = ?
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad
             ORDER BY u.Nombre
@@ -789,7 +789,7 @@ class MainWindow:
                     COUNT(CASE WHEN EstatusModuloUsuario = 'En proceso' THEN 1 END) as EnProceso,
                     COUNT(CASE WHEN EstatusModuloUsuario = 'Registrado' THEN 1 END) as Registrados,
                     COUNT(*) as Total
-                FROM dbo.ProgresoModulo
+                FROM dbo.Instituto_ProgresoModulo
             """)
             result = self.cursor.fetchone()
 
@@ -819,8 +819,8 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
                 COUNT(DISTINCT pm.IdModulo) as TotalModulos,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
             FROM dbo.Instituto_Usuario u
-            LEFT JOIN dbo.UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN dbo.Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -30, GETDATE())
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.FechaRegistro
             ORDER BY u.FechaRegistro DESC
@@ -921,7 +921,7 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
 
         # Cargar unidades de negocio
         try:
-            self.cursor.execute("SELECT IdUnidadDeNegocio, NombreUnidad FROM dbo.UnidadDeNegocio ORDER BY NombreUnidad")
+            self.cursor.execute("SELECT IdUnidadDeNegocio, NombreUnidad FROM dbo.Instituto_UnidadDeNegocio ORDER BY NombreUnidad")
             unidades = self.cursor.fetchall()
             entries['unidad']['values'] = [f"{u[0]} - {u[1]}" for u in unidades]
             entries['unidad_data'] = {f"{u[0]} - {u[1]}": u[0] for u in unidades}
@@ -1057,7 +1057,7 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
 
         # Cargar módulos existentes
         try:
-            self.cursor.execute("SELECT * FROM dbo.Modulo")
+            self.cursor.execute("SELECT * FROM dbo.Instituto_Modulo")
             for row in self.cursor.fetchall():
                 tree.insert('', tk.END, values=row)
         except Exception as e:

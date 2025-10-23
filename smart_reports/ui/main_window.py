@@ -440,32 +440,34 @@ class MainWindow:
         canvas.get_tk_widget().pack(fill=BOTH, expand=True)
 
     def search_user_by_id(self):
-        """Buscar usuario por ID"""
+        """Buscar usuario por ID y mostrar su progreso en módulos"""
         user_id = self.search_entry.get()
         if not user_id:
             messagebox.showwarning("Advertencia", "Ingrese un ID de usuario")
             return
 
+        # Consulta mejorada: mostrar módulos con estatus y fechas
         self.cursor.execute("""
             SELECT
                 u.UserId,
                 u.Nombre,
-                u.Email,
-                un.NombreUnidad,
-                u.Nivel,
-                COUNT(DISTINCT pm.IdModulo) as TotalModulos,
-                SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
+                m.NombreModulo,
+                pm.EstatusModuloUsuario,
+                CONVERT(VARCHAR(10), pm.FechaInicio, 103) as FechaAsignacion,
+                CONVERT(VARCHAR(10), pm.FechaFinalizacion, 103) as FechaFinalizacion,
+                un.NombreUnidad
             FROM instituto_Usuario u
             LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN instituto_Modulo m ON pm.IdModulo = m.IdModulo
             WHERE u.UserId = ?
-            GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Nivel
+            ORDER BY m.NombreModulo
         """, (user_id,))
 
-        result = self.cursor.fetchone()
-        if result:
-            self.display_search_results([result],
-                ['ID', 'Nombre', 'Email', 'Unidad', 'Nivel', 'Total Modulos', 'Completados'])
+        results = self.cursor.fetchall()
+        if results:
+            self.display_search_results(results,
+                ['User ID', 'Nombre', 'Módulo', 'Estatus', 'Fecha Asignación', 'Fecha Finalización', 'Unidad'])
         else:
             messagebox.showinfo("Sin resultados", "Usuario no encontrado")
 
@@ -491,17 +493,27 @@ class MainWindow:
             return
 
         self.cursor.execute("""
-            SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Division, u.FechaRegistro, u.Activo
+            SELECT
+                u.UserId,
+                u.Nombre,
+                u.Email,
+                un.NombreUnidad,
+                COUNT(DISTINCT pm.IdModulo) as TotalModulos,
+                SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados,
+                SUM(CASE WHEN pm.EstatusModuloUsuario = 'En proceso' THEN 1 ELSE 0 END) as EnProceso,
+                SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados
             FROM instituto_Usuario u
             LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE un.NombreUnidad = ?
+            GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad
             ORDER BY u.Nombre
         """, (unit,))
 
         results = self.cursor.fetchall()
         if results:
             self.display_search_results(results,
-                ['ID', 'Nombre', 'Email', 'Unidad', 'Division', 'Fecha Reg', 'Activo'])
+                ['User ID', 'Nombre', 'Email', 'Unidad', 'Total Módulos', 'Completados', 'En Proceso', 'Registrados'])
         else:
             messagebox.showinfo("Sin resultados", f"No se encontraron usuarios en {unit}")
 
@@ -533,19 +545,28 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
             messagebox.showerror("Error", f"Error al obtener estadísticas: {str(e)}")
 
     def query_new_users(self):
-        """Consultar usuarios nuevos"""
+        """Consultar usuarios nuevos con su progreso"""
         self.cursor.execute("""
-            SELECT u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.Division, u.FechaRegistro, u.Activo
+            SELECT
+                u.UserId,
+                u.Nombre,
+                u.Email,
+                un.NombreUnidad,
+                CONVERT(VARCHAR(10), u.FechaRegistro, 103) as FechaRegistro,
+                COUNT(DISTINCT pm.IdModulo) as TotalModulos,
+                SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
             FROM instituto_Usuario u
             LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -30, GETDATE())
+            GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.FechaRegistro
             ORDER BY u.FechaRegistro DESC
         """)
 
         results = self.cursor.fetchall()
         if results:
             self.display_search_results(results,
-                ['ID', 'Nombre', 'Email', 'Unidad', 'Division', 'Fecha Reg', 'Activo'])
+                ['User ID', 'Nombre', 'Email', 'Unidad', 'Fecha Registro', 'Total Módulos', 'Completados'])
         else:
             messagebox.showinfo("Sin resultados", "No hay usuarios nuevos en los ultimos 30 dias")
 

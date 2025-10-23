@@ -56,6 +56,7 @@ class TranscriptProcessor:
         """
         Normaliza los nombres de columnas a un formato estándar
         Busca flexiblemente las columnas en el Excel
+        Solo mapea las columnas que realmente se usan
         """
         # Crear un mapeo flexible - buscar columnas que contengan estas palabras clave
         normalized_df = df.copy()
@@ -88,37 +89,17 @@ class TranscriptProcessor:
             elif col_lower == 'transcript status':
                 column_map[col] = 'estado'
 
-            # Fechas
-            elif 'fecha' in col_lower and 'inicio' in col_lower:
+            # Fecha asignada del expediente -> FechaInicio en BD
+            elif 'fecha asignada' in col_lower and 'expediente' in col_lower:
                 column_map[col] = 'fecha_inicio'
-            elif col_lower == 'training start date':
+            elif col_lower == 'transcript assigned date':
                 column_map[col] = 'fecha_inicio'
 
-            elif 'fecha' in col_lower and 'finalización' in col_lower:
+            # Fecha de finalización de expediente -> FechaFinalizacion en BD
+            elif 'fecha' in col_lower and 'finalización' in col_lower and 'expediente' in col_lower:
                 column_map[col] = 'fecha_fin'
             elif col_lower == 'transcript completed date':
                 column_map[col] = 'fecha_fin'
-
-            elif 'fecha' in col_lower and 'registro' in col_lower:
-                column_map[col] = 'fecha_registro'
-            elif col_lower == 'transcript registration date':
-                column_map[col] = 'fecha_registro'
-
-            # Otros campos
-            elif 'versión' in col_lower:
-                column_map[col] = 'version'
-            elif col_lower == 'training version':
-                column_map[col] = 'version'
-
-            elif 'tipo' in col_lower and 'capacitación' in col_lower:
-                column_map[col] = 'tipo'
-            elif col_lower == 'training type':
-                column_map[col] = 'tipo'
-
-            elif 'proveedor' in col_lower:
-                column_map[col] = 'proveedor'
-            elif col_lower == 'training provider':
-                column_map[col] = 'proveedor'
 
         # Aplicar el mapeo
         normalized_df.rename(columns=column_map, inplace=True)
@@ -129,10 +110,11 @@ class TranscriptProcessor:
 
         if missing:
             # Mostrar columnas disponibles para debugging
+            print(f"\n=== ERROR EN MAPEO DE COLUMNAS ===")
             print(f"Columnas originales del archivo: {list(df.columns)}")
             print(f"Columnas después del mapeo: {list(normalized_df.columns)}")
             print(f"Columnas faltantes: {missing}")
-            raise ValueError(f"Columnas requeridas no encontradas después del mapeo: {missing}")
+            raise ValueError(f"Columnas requeridas no encontradas: {missing}")
 
         return normalized_df
 
@@ -230,31 +212,6 @@ class TranscriptProcessor:
         print(f"ADVERTENCIA: Estado no reconocido: '{status}'")
         return 'No iniciado'  # Default
 
-    def get_module_category(self, module_title: str) -> str:
-        """
-        Categoriza los módulos basándose en su título
-        """
-        title_lower = str(module_title).lower()
-
-        # Categorías basadas en palabras clave
-        categories = {
-            'Cultura Organizacional': ['cultura', 'valores', 'ética', 'compliance', 'política'],
-            'Operaciones': ['operación', 'operaciones', 'portuaria', 'grúa', 'equipo', 'maquinaria'],
-            'Seguridad': ['seguridad', 'safety', 'nom-035', 'prevención', 'riesgo', 'emergencia'],
-            'Tecnología': ['sistema', 'software', 'tecnología', 'digital', 'ti', 'informática'],
-            'Gestión': ['gestión', 'liderazgo', 'administración', 'management', 'proyecto'],
-            'Comercial': ['comercial', 'ventas', 'cliente', 'mercado', 'negocio'],
-            'Salud y Bienestar': ['salud', 'bienestar', 'wellness', 'médico', 'primeros auxilios'],
-            'Idiomas': ['inglés', 'english', 'idioma', 'language'],
-            'General': []  # Categoría por defecto
-        }
-
-        for category, keywords in categories.items():
-            for keyword in keywords:
-                if keyword in title_lower:
-                    return category
-
-        return 'General'
 
     def process_file(self, file_path: str) -> Dict:
         """
@@ -302,23 +259,12 @@ class TranscriptProcessor:
                     )
 
             # Procesar módulos únicos
-            # tipo y proveedor son opcionales
-            modulos_cols = ['titulo_modulo']
-            if 'tipo' in df.columns:
-                modulos_cols.append('tipo')
-            if 'proveedor' in df.columns:
-                modulos_cols.append('proveedor')
-
-            modulos_df = df[modulos_cols].drop_duplicates()
+            modulos_df = df[['titulo_modulo']].drop_duplicates()
             self.stats['modulos_unicos'] = len(modulos_df)
 
             for _, modulo in modulos_df.iterrows():
                 if pd.notna(modulo['titulo_modulo']):
-                    self.process_module(
-                        titulo=modulo['titulo_modulo'],
-                        tipo=modulo.get('tipo') if 'tipo' in modulo else None,
-                        proveedor=modulo.get('proveedor') if 'proveedor' in modulo else None
-                    )
+                    self.process_module(titulo=modulo['titulo_modulo'])
 
             # Procesar inscripciones (progreso de módulos)
             print(f"\nProcesando {len(df)} inscripciones...")
@@ -367,9 +313,10 @@ class TranscriptProcessor:
 
         return False
 
-    def process_module(self, titulo: str, tipo: str = None, proveedor: str = None) -> int:
+    def process_module(self, titulo: str) -> int:
         """
         Procesa un módulo y retorna su ID
+        Solo guarda el título del módulo
         """
         try:
             # Buscar si el módulo ya existe
@@ -379,14 +326,11 @@ class TranscriptProcessor:
             if result:
                 return result[0]
 
-            # Insertar nuevo módulo
-            categoria = self.get_module_category(titulo)
-            descripcion = f"Tipo: {tipo or 'N/A'}\nProveedor: {proveedor or 'Instituto HP'}\nCategoría: {categoria}"
-
+            # Insertar nuevo módulo (solo con título)
             self.cursor.execute("""
-                INSERT INTO instituto_Modulo (NombreModulo, DescripcionModulo, FechaDeAsignacion)
-                VALUES (?, ?, GETDATE())
-            """, (titulo, descripcion))
+                INSERT INTO instituto_Modulo (NombreModulo, FechaDeAsignacion)
+                VALUES (?, GETDATE())
+            """, (titulo,))
 
             self.conn.commit()
 
@@ -404,12 +348,19 @@ class TranscriptProcessor:
     def process_inscription(self, row: pd.Series) -> bool:
         """
         Procesa una inscripción (progreso de módulo)
+        Mapea:
+        - "Fecha asignada del expediente" -> FechaInicio
+        - "Fecha de finalización de expediente" -> FechaFinalizacion
+        - "Estado del expediente" -> EstatusModuloUsuario
         """
         try:
             user_id = str(row['id_usuario'])
             titulo_modulo = row['titulo_modulo']
             estado = self.normalize_status(row.get('estado'))
+
+            # fecha_inicio viene de "Fecha asignada del expediente"
             fecha_inicio = self.convert_excel_date(row.get('fecha_inicio'))
+            # fecha_fin viene de "Fecha de finalización de expediente"
             fecha_fin = self.convert_excel_date(row.get('fecha_fin'))
 
             # Obtener ID del módulo
@@ -418,7 +369,7 @@ class TranscriptProcessor:
 
             if not result:
                 # Si el módulo no existe, crearlo primero
-                module_id = self.process_module(titulo_modulo, row.get('tipo'), row.get('proveedor'))
+                module_id = self.process_module(titulo_modulo)
             else:
                 module_id = result[0]
 
@@ -435,9 +386,12 @@ class TranscriptProcessor:
                     # Actualizar inscripción existente
                     self.cursor.execute("""
                         UPDATE instituto_ProgresoModulo
-                        SET EstatusModuloUsuario = ?, FechaFinalizacion = ?, FechaUltimaActualizacion = GETDATE()
+                        SET EstatusModuloUsuario = ?,
+                            FechaInicio = ?,
+                            FechaFinalizacion = ?,
+                            FechaUltimaActualizacion = GETDATE()
                         WHERE UserId = ? AND IdModulo = ?
-                    """, (estado, fecha_fin, user_id, module_id))
+                    """, (estado, fecha_inicio, fecha_fin, user_id, module_id))
                 else:
                     # Insertar nueva inscripción
                     self.cursor.execute("""

@@ -342,7 +342,7 @@ class TranscriptProcessor:
         """
         Procesa un módulo y retorna su ID
         CRÍTICO: Extrae el número del módulo del título (MÓDULO 1.X -> X)
-        Tabla: dbo.Modulo
+        Tabla: dbo.Instituto_Modulo
         """
         try:
             # Extraer el número del módulo del título
@@ -353,7 +353,7 @@ class TranscriptProcessor:
                 return -1
 
             # Verificar si el módulo ya existe por su número
-            self.cursor.execute("SELECT IdModulo FROM dbo.Modulo WHERE IdModulo = ?", (module_number,))
+            self.cursor.execute("SELECT IdModulo FROM dbo.Instituto_Modulo WHERE IdModulo = ?", (module_number,))
             result = self.cursor.fetchone()
 
             if result:
@@ -361,10 +361,10 @@ class TranscriptProcessor:
 
             # Insertar nuevo módulo con IdModulo específico
             self.cursor.execute("""
-                SET IDENTITY_INSERT dbo.Modulo ON;
-                INSERT INTO dbo.Modulo (IdModulo, NombreModulo, FechaDeAsignacion)
+                SET IDENTITY_INSERT dbo.Instituto_Modulo ON;
+                INSERT INTO dbo.Instituto_Modulo (IdModulo, NombreModulo, FechaDeAsignacion)
                 VALUES (?, ?, GETDATE());
-                SET IDENTITY_INSERT dbo.Modulo OFF;
+                SET IDENTITY_INSERT dbo.Instituto_Modulo OFF;
             """, (module_number, titulo))
 
             self.conn.commit()
@@ -378,7 +378,7 @@ class TranscriptProcessor:
     def process_inscription(self, row: pd.Series) -> bool:
         """
         Procesa una inscripción (progreso de módulo)
-        CRÍTICO: Mapea a dbo.ProgresoModulo
+        CRÍTICO: Mapea a dbo.Instituto_ProgresoModulo
         Mapeo de columnas:
         - "Identificación de usuario" -> UserId
         - "Título de la capacitación" -> Extrae IdModulo con regex MÓDULO 1.X
@@ -405,7 +405,7 @@ class TranscriptProcessor:
             fecha_fin = self.convert_excel_date(row.get('fecha_fin'))
 
             # Asegurar que el módulo existe
-            self.cursor.execute("SELECT IdModulo FROM dbo.Modulo WHERE IdModulo = ?", (module_id,))
+            self.cursor.execute("SELECT IdModulo FROM dbo.Instituto_Modulo WHERE IdModulo = ?", (module_id,))
             if not self.cursor.fetchone():
                 # Crear el módulo si no existe
                 module_id = self.process_module(titulo_modulo)
@@ -414,7 +414,7 @@ class TranscriptProcessor:
 
             # UPSERT: Verificar si ya existe la inscripción (UserId + IdModulo)
             self.cursor.execute("""
-                SELECT IdInscripcion FROM dbo.ProgresoModulo
+                SELECT IdInscripcion FROM dbo.Instituto_ProgresoModulo
                 WHERE UserId = ? AND IdModulo = ?
             """, (user_id, module_id))
 
@@ -423,7 +423,7 @@ class TranscriptProcessor:
             if existing:
                 # Actualizar inscripción existente
                 self.cursor.execute("""
-                    UPDATE dbo.ProgresoModulo
+                    UPDATE dbo.Instituto_ProgresoModulo
                     SET EstatusModuloUsuario = ?,
                         FechaInicio = ?,
                         FechaFinalizacion = ?,
@@ -433,7 +433,7 @@ class TranscriptProcessor:
             else:
                 # Insertar nueva inscripción
                 self.cursor.execute("""
-                    INSERT INTO dbo.ProgresoModulo
+                    INSERT INTO dbo.Instituto_ProgresoModulo
                     (UserId, IdModulo, EstatusModuloUsuario, FechaInicio, FechaFinalizacion)
                     VALUES (?, ?, ?, ?, ?)
                 """, (user_id, module_id, estado, fecha_inicio, fecha_fin))
@@ -451,7 +451,7 @@ class TranscriptProcessor:
     def get_summary_stats(self) -> Dict:
         """
         Obtiene estadísticas generales de la base de datos
-        Tablas: dbo.Instituto_Usuario, dbo.Modulo, dbo.ProgresoModulo, dbo.UnidadDeNegocio
+        Tablas: dbo.Instituto_Usuario, dbo.Instituto_Modulo, dbo.Instituto_ProgresoModulo, dbo.Instituto_UnidadDeNegocio
         """
         stats = {}
 
@@ -460,13 +460,13 @@ class TranscriptProcessor:
         stats['total_usuarios'] = self.cursor.fetchone()[0]
 
         # Total de módulos
-        self.cursor.execute("SELECT COUNT(*) FROM dbo.Modulo")
+        self.cursor.execute("SELECT COUNT(*) FROM dbo.Instituto_Modulo")
         stats['total_modulos'] = self.cursor.fetchone()[0]
 
         # Estados de progreso
         self.cursor.execute("""
             SELECT EstatusModuloUsuario, COUNT(*)
-            FROM dbo.ProgresoModulo
+            FROM dbo.Instituto_ProgresoModulo
             GROUP BY EstatusModuloUsuario
         """)
         stats['estados'] = dict(self.cursor.fetchall())
@@ -474,7 +474,7 @@ class TranscriptProcessor:
         # Usuarios por unidad de negocio
         self.cursor.execute("""
             SELECT un.NombreUnidad, COUNT(u.UserId)
-            FROM dbo.UnidadDeNegocio un
+            FROM dbo.Instituto_UnidadDeNegocio un
             LEFT JOIN dbo.Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
             GROUP BY un.IdUnidadDeNegocio, un.NombreUnidad
         """)
@@ -493,7 +493,7 @@ class ReportGenerator:
     def get_user_progress(self, user_id: str) -> pd.DataFrame:
         """
         Obtiene el progreso completo de un usuario
-        Tablas: dbo.ProgresoModulo, dbo.Modulo
+        Tablas: dbo.Instituto_ProgresoModulo, dbo.Instituto_Modulo
         """
         query = """
             SELECT
@@ -502,8 +502,8 @@ class ReportGenerator:
                 pm.CalificacionModuloUsuario,
                 pm.FechaInicio,
                 pm.FechaFinalizacion
-            FROM dbo.ProgresoModulo pm
-            JOIN dbo.Modulo m ON pm.IdModulo = m.IdModulo
+            FROM dbo.Instituto_ProgresoModulo pm
+            JOIN dbo.Instituto_Modulo m ON pm.IdModulo = m.IdModulo
             WHERE pm.UserId = ?
             ORDER BY pm.FechaInicio DESC
         """
@@ -513,7 +513,7 @@ class ReportGenerator:
     def get_module_stats(self) -> pd.DataFrame:
         """
         Obtiene estadísticas por módulo
-        Tablas: dbo.Modulo, dbo.ProgresoModulo
+        Tablas: dbo.Instituto_Modulo, dbo.Instituto_ProgresoModulo
         """
         query = """
             SELECT
@@ -524,8 +524,8 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioCalificacion
-            FROM dbo.Modulo m
-            LEFT JOIN dbo.ProgresoModulo pm ON m.IdModulo = pm.IdModulo
+            FROM dbo.Instituto_Modulo m
+            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
             GROUP BY m.IdModulo, m.NombreModulo
             ORDER BY TotalUsuarios DESC
         """
@@ -535,7 +535,7 @@ class ReportGenerator:
     def get_business_unit_report(self, unit_id: int = None) -> pd.DataFrame:
         """
         Reporte por unidad de negocio
-        Tablas: dbo.UnidadDeNegocio, dbo.Instituto_Usuario, dbo.ProgresoModulo
+        Tablas: dbo.Instituto_UnidadDeNegocio, dbo.Instituto_Usuario, dbo.Instituto_ProgresoModulo
         """
         query = """
             SELECT
@@ -545,9 +545,9 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as ModulosCompletados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioGeneral
-            FROM dbo.UnidadDeNegocio un
+            FROM dbo.Instituto_UnidadDeNegocio un
             LEFT JOIN dbo.Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
-            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
         """
 
         if unit_id:
@@ -560,14 +560,14 @@ class ReportGenerator:
     def get_completion_trends(self, days: int = 30) -> pd.DataFrame:
         """
         Obtiene tendencias de completación
-        Tabla: dbo.ProgresoModulo
+        Tabla: dbo.Instituto_ProgresoModulo
         """
         query = f"""
             SELECT
                 CAST(FechaFinalizacion AS DATE) as Fecha,
                 COUNT(*) as ModulosCompletados,
                 COUNT(DISTINCT UserId) as UsuariosActivos
-            FROM dbo.ProgresoModulo
+            FROM dbo.Instituto_ProgresoModulo
             WHERE EstatusModuloUsuario = 'Completado'
                 AND FechaFinalizacion >= DATEADD(day, -{days}, GETDATE())
             GROUP BY CAST(FechaFinalizacion AS DATE)

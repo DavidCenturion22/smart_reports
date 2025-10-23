@@ -119,19 +119,39 @@ class MainWindow:
                          font=('Arial', 20, 'bold'))
         title.pack(pady=10)
 
-        # Frame de estado unificado
-        status_frame = ttk.Frame(main_frame)
-        status_frame.pack(pady=20)
+        # Frame de carga de archivo
+        file_frame = ttk.LabelFrame(main_frame, text="1. Cargar Archivo", padding=20)
+        file_frame.pack(padx=20, pady=10, fill=X)
 
-        # Botón unificado para ver estadísticas
-        ttk.Button(status_frame, text="Ver Estadísticas de Progreso",
-                  command=self.show_progress_stats,
-                  bootstyle='primary',
-                  width=30).pack(pady=10)
+        file_info_frame = ttk.Frame(file_frame)
+        file_info_frame.pack(fill=X)
 
-        # Botones de acción
+        ttk.Label(file_info_frame, text="Archivo:").pack(side=LEFT, padx=5)
+        self.file_label = ttk.Label(file_info_frame, text="Ningún archivo seleccionado",
+                                    foreground='gray')
+        self.file_label.pack(side=LEFT, padx=5)
+
+        ttk.Button(file_frame, text="📁 Seleccionar Archivo Transcript Status",
+                  command=self.select_transcript_file,
+                  bootstyle='info',
+                  width=35).pack(pady=10)
+
+        # Frame de actualización
+        update_frame = ttk.LabelFrame(main_frame, text="2. Actualizar Base de Datos", padding=20)
+        update_frame.pack(padx=20, pady=10, fill=X)
+
+        ttk.Button(update_frame, text="🔄 Actualizar Base de Datos (Cruce de Datos)",
+                  command=self.update_database_from_file,
+                  bootstyle='success',
+                  width=40).pack(pady=5)
+
+        ttk.Label(update_frame, text="Este proceso actualizará usuarios, módulos y progreso en la BD",
+                 font=('Arial', 9, 'italic'),
+                 foreground='gray').pack()
+
+        # Botones de acción adicionales
         actions_frame = ttk.Frame(main_frame)
-        actions_frame.pack(pady=20)
+        actions_frame.pack(pady=10)
 
         ttk.Button(actions_frame, text="Actualizar Correos",
                   command=self.update_emails,
@@ -157,27 +177,117 @@ class MainWindow:
         upload_frame = ttk.Frame(main_frame)
         upload_frame.pack(pady=10)
 
-        ttk.Button(upload_frame, text="Cargar Reporte Transcript Status",
-                  command=self.load_transcript_file,
+        ttk.Button(upload_frame, text="🔍 Ver Estadísticas Actuales",
+                  command=self.show_progress_stats,
                   bootstyle='primary').pack()
 
+    def select_transcript_file(self):
+        """Seleccionar archivo Transcript Status"""
+        file_path = filedialog.askopenfilename(
+            title="Seleccionar archivo Transcript Status",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("CSV files", "*.csv")]
+        )
+
+        if file_path:
+            self.current_file = file_path
+            filename = os.path.basename(file_path)
+            self.file_label.config(text=filename, foreground='green')
+            self.log_movement(f"Archivo seleccionado: {filename}")
+            messagebox.showinfo("Archivo Seleccionado",
+                f"Archivo cargado: {filename}\n\nAhora haz clic en 'Actualizar Base de Datos'")
+
+    def update_database_from_file(self):
+        """Actualizar base de datos desde archivo cargado"""
+        if not self.current_file:
+            messagebox.showwarning("Sin Archivo",
+                "Primero debes seleccionar un archivo Transcript Status")
+            return
+
+        try:
+            self.log_movement("="*50)
+            self.log_movement("🔄 INICIANDO ACTUALIZACIÓN DE BASE DE DATOS")
+            self.log_movement("="*50)
+
+            # Crear procesador
+            processor = TranscriptProcessor(self.conn)
+
+            # Procesar archivo
+            stats = processor.process_file(self.current_file)
+
+            # Mostrar estadísticas detalladas en el panel
+            self.show_processing_stats(stats)
+
+            # Mensaje de éxito
+            messagebox.showinfo("Actualización Exitosa",
+                f"✓ Base de datos actualizada correctamente\n\n" +
+                f"Registros procesados: {stats['total_registros']:,}\n" +
+                f"Usuarios nuevos: {stats['usuarios_nuevos']}\n" +
+                f"Módulos nuevos: {stats['modulos_nuevos']}\n" +
+                f"Inscripciones actualizadas: {stats['inscripciones_actualizadas']}")
+
+            self.log_movement("✓ Actualización completada exitosamente")
+            self.log_movement("="*50 + "\n")
+
+        except Exception as e:
+            error_msg = f"Error al actualizar base de datos: {str(e)}"
+            messagebox.showerror("Error", error_msg)
+            self.log_movement(f"✗ ERROR: {str(e)}")
+            import traceback
+            self.log_movement(traceback.format_exc())
+
     def show_dashboards_panel(self):
-        """Panel de dashboards con gráficas"""
+        """Panel de dashboards con gráficas interactivas"""
         self.clear_content_area()
 
-        main_frame = ttk.Frame(self.content_area)
+        # Frame principal con estilo del tema
+        main_frame = ttk.Frame(self.content_area, bootstyle='default')
         main_frame.pack(fill=BOTH, expand=True)
 
-        title = ttk.Label(main_frame, text="Dashboards",
+        # Título
+        title_frame = ttk.Frame(main_frame)
+        title_frame.pack(fill=X, padx=20, pady=10)
+
+        title = ttk.Label(title_frame, text="📊 Dashboards - Instituto HP",
                          font=('Arial', 20, 'bold'))
-        title.pack(pady=10)
+        title.pack(side=LEFT)
 
-        # Frame para gráficas
-        graphs_frame = ttk.Frame(main_frame)
-        graphs_frame.pack(fill=BOTH, expand=True, padx=20, pady=20)
+        # Botón de refrescar
+        ttk.Button(title_frame, text="🔄 Actualizar Gráficas",
+                  command=self.refresh_dashboards,
+                  bootstyle='info-outline').pack(side=RIGHT)
 
-        # Crear gráficas
-        self.create_sample_charts(graphs_frame)
+        # Información de datos
+        info_label = ttk.Label(main_frame,
+                              text="Haz clic en cualquier gráfica para ver los datos detallados",
+                              font=('Arial', 10, 'italic'),
+                              foreground='gray')
+        info_label.pack(pady=5)
+
+        # Separador
+        ttk.Separator(main_frame, orient='horizontal').pack(fill=X, padx=20, pady=5)
+
+        # Frame para gráficas con scrollbar
+        canvas_frame = ttk.Frame(main_frame)
+        canvas_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
+
+        # Crear canvas con scrollbar
+        canvas = tk.Canvas(canvas_frame, bg='#2b3e50')  # Fondo del tema darkly
+        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, bootstyle='default')
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        # Crear gráficas interactivas
+        self.create_interactive_charts(scrollable_frame)
 
     def show_consultas_panel(self):
         """Panel de consultas"""
@@ -303,61 +413,50 @@ class MainWindow:
             widget.destroy()
 
     def load_transcript_file(self):
-        """Cargar archivo de Transcript Status"""
-        file_path = filedialog.askopenfilename(
-            title="Seleccionar archivo Transcript Status",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("CSV files", "*.csv")]
-        )
-
-        if file_path:
-            try:
-                # Crear procesador
-                processor = TranscriptProcessor(self.conn)
-
-                # Procesar archivo
-                self.current_file = file_path
-                stats = processor.process_file(file_path)
-
-                # Mostrar estadísticas
-                self.show_processing_stats(stats)
-
-                # Log
-                self.log_movement(f"Archivo procesado: {os.path.basename(file_path)}")
-                messagebox.showinfo("Exito",
-                    f"Archivo procesado correctamente\n\n" +
-                    f"Registros: {stats['total_registros']:,}\n" +
-                    f"Usuarios nuevos: {stats['usuarios_nuevos']}\n" +
-                    f"Modulos nuevos: {stats['modulos_nuevos']}\n" +
-                    f"Inscripciones: {stats['inscripciones_actualizadas']}")
-
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al procesar archivo: {str(e)}")
-                self.log_movement(f"ERROR: {str(e)}")
+        """DEPRECATED: Usar select_transcript_file y update_database_from_file"""
+        self.select_transcript_file()
 
     def show_processing_stats(self, stats):
-        """Mostrar estadísticas del procesamiento"""
+        """Mostrar estadísticas del procesamiento en el panel"""
         if hasattr(self, 'movements_text'):
-            summary = f"""
-╔══════════════════════════════════════════════╗
-║     RESUMEN DE PROCESAMIENTO                 ║
-╠══════════════════════════════════════════════╣
-  Archivo: {stats['archivo']}
-  Fecha: {stats['fecha_procesamiento']}
+            # Encabezado
+            self.log_movement("\n📊 RESUMEN DE ACTUALIZACIÓN")
+            self.log_movement("─" * 50)
 
-  Estadisticas:
-  • Total de registros: {stats['total_registros']:,}
-  • Usuarios unicos: {stats['usuarios_unicos']:,}
-  • Modulos unicos: {stats['modulos_unicos']:,}
+            # Información del archivo
+            self.log_movement(f"📄 Archivo: {stats['archivo']}")
+            self.log_movement(f"📅 Fecha: {stats['fecha_procesamiento']}")
+            self.log_movement("")
 
-  Actualizaciones:
-  • Usuarios nuevos: {stats['usuarios_nuevos']}
-  • Modulos nuevos: {stats['modulos_nuevos']}
-  • Inscripciones: {stats['inscripciones_actualizadas']}
+            # Estadísticas principales
+            self.log_movement("📈 ESTADÍSTICAS:")
+            self.log_movement(f"  • Total de registros procesados: {stats['total_registros']:,}")
+            self.log_movement(f"  • Usuarios únicos encontrados: {stats['usuarios_unicos']:,}")
+            self.log_movement(f"  • Módulos únicos encontrados: {stats['modulos_unicos']:,}")
+            self.log_movement("")
 
-  {'Errores: ' + str(len(stats['errores'])) if stats['errores'] else 'Sin errores'}
-╚══════════════════════════════════════════════╝
-"""
-            self.movements_text.insert(tk.END, summary)
+            # Cambios realizados
+            self.log_movement("✏️  CAMBIOS EN BASE DE DATOS:")
+            self.log_movement(f"  • Usuarios nuevos creados: {stats['usuarios_nuevos']}")
+            self.log_movement(f"  • Módulos nuevos creados: {stats['modulos_nuevos']}")
+            self.log_movement(f"  • Inscripciones actualizadas: {stats['inscripciones_actualizadas']}")
+            self.log_movement("")
+
+            # Errores si los hay
+            if stats.get('errores') and len(stats['errores']) > 0:
+                self.log_movement("⚠️  ADVERTENCIAS/ERRORES:")
+                for error in stats['errores']:
+                    self.log_movement(f"  • {error}")
+                self.log_movement("")
+
+            # Resumen final
+            if stats['inscripciones_actualizadas'] > 0:
+                self.log_movement("✅ ACTUALIZACIÓN EXITOSA")
+                self.log_movement(f"   Se actualizaron {stats['inscripciones_actualizadas']} registros de progreso")
+            else:
+                self.log_movement("ℹ️  No se realizaron cambios (datos ya actualizados)")
+
+            self.log_movement("─" * 50)
             self.movements_text.see(tk.END)
 
     def update_emails(self):
@@ -398,46 +497,206 @@ class MainWindow:
         except Exception as e:
             print(f"Error al guardar en historial: {e}")
 
-    def create_sample_charts(self, parent):
-        """Crear gráficas de ejemplo"""
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        fig.suptitle('Dashboard Instituto HP', fontsize=16)
+    def create_interactive_charts(self, parent):
+        """Crear gráficas interactivas con datos de ejemplo"""
 
-        # Gráfica 1: Estado de módulos
-        estados = ['Completado', 'En proceso', 'Registrado']
-        valores = [45, 30, 25]
+        # Datos de ejemplo
+        self.chart_data = {
+            'estados_modulos': {
+                'labels': ['Completado', 'En proceso', 'Registrado'],
+                'values': [45, 30, 25],
+                'title': 'Estado de Módulos'
+            },
+            'usuarios_unidad': {
+                'labels': ['LCIT', 'LCT', 'TNG', 'EIT'],
+                'values': [120, 95, 78, 110],
+                'title': 'Usuarios por Unidad de Negocio'
+            },
+            'progreso_mensual': {
+                'labels': ['Ene', 'Feb', 'Mar', 'Abr', 'May'],
+                'values': [20, 35, 45, 60, 75],
+                'title': 'Módulos Completados por Mes'
+            },
+            'tasa_finalizacion': {
+                'labels': ['Diplomado 1', 'Diplomado 2'],
+                'values': [78, 65],
+                'title': 'Tasa de Finalización (%)'
+            }
+        }
+
+        # Crear 4 frames para las gráficas (2x2)
+        row1 = ttk.Frame(parent)
+        row1.pack(fill=BOTH, expand=True, pady=10)
+
+        row2 = ttk.Frame(parent)
+        row2.pack(fill=BOTH, expand=True, pady=10)
+
+        # Gráfica 1: Pie Chart - Estado de Módulos
+        chart1_frame = ttk.LabelFrame(row1, text="Estado de Módulos", padding=10, bootstyle='primary')
+        chart1_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
+        self.create_pie_chart(chart1_frame, 'estados_modulos')
+
+        # Gráfica 2: Bar Chart - Usuarios por Unidad
+        chart2_frame = ttk.LabelFrame(row1, text="Usuarios por Unidad de Negocio", padding=10, bootstyle='info')
+        chart2_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
+        self.create_bar_chart(chart2_frame, 'usuarios_unidad')
+
+        # Gráfica 3: Line Chart - Progreso Mensual
+        chart3_frame = ttk.LabelFrame(row2, text="Módulos Completados por Mes", padding=10, bootstyle='success')
+        chart3_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
+        self.create_line_chart(chart3_frame, 'progreso_mensual')
+
+        # Gráfica 4: Horizontal Bar - Tasa Finalización
+        chart4_frame = ttk.LabelFrame(row2, text="Tasa de Finalización por Diplomado", padding=10, bootstyle='warning')
+        chart4_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
+        self.create_horizontal_bar_chart(chart4_frame, 'tasa_finalizacion')
+
+        # Nota sobre datos de ejemplo
+        note_frame = ttk.Frame(parent)
+        note_frame.pack(fill=X, pady=20)
+        ttk.Label(note_frame,
+                 text="ℹ️  Los datos mostrados son de ejemplo. Se actualizarán con datos reales al cargar el archivo Transcript.",
+                 font=('Arial', 9, 'italic'),
+                 foreground='orange').pack()
+
+    def create_pie_chart(self, parent, data_key):
+        """Crear gráfica de pastel interactiva"""
+        data = self.chart_data[data_key]
+        fig, ax = plt.subplots(figsize=(5, 4))
+        fig.patch.set_facecolor('#2b3e50')
+        ax.set_facecolor('#2b3e50')
+
         colors = ['#82B366', '#FEB236', '#88B0D3']
-        axes[0, 0].pie(valores, labels=estados, colors=colors, autopct='%1.1f%%')
-        axes[0, 0].set_title('Estado de Modulos')
+        wedges, texts, autotexts = ax.pie(data['values'], labels=data['labels'],
+                                           colors=colors, autopct='%1.1f%%',
+                                           startangle=90)
 
-        # Gráfica 2: Usuarios por Unidad de Negocio
-        unidades = ['LCIT', 'LCT', 'TNG', 'EIT']
-        usuarios = [120, 95, 78, 110]
-        axes[0, 1].bar(unidades, usuarios, color='#6B5B95')
-        axes[0, 1].set_title('Usuarios por Unidad de Negocio')
-        axes[0, 1].set_ylabel('Numero de Usuarios')
+        for text in texts:
+            text.set_color('white')
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_weight('bold')
 
-        # Gráfica 3: Progreso mensual
-        meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May']
-        completados = [20, 35, 45, 60, 75]
-        axes[1, 0].plot(meses, completados, marker='o', color='#82B366', linewidth=2)
-        axes[1, 0].set_title('Modulos Completados por Mes')
-        axes[1, 0].set_ylabel('Modulos Completados')
-        axes[1, 0].grid(True, alpha=0.3)
-
-        # Gráfica 4: Tasa de finalización
-        diplomados = ['Diplomado 1', 'Diplomado 2']
-        finalizacion = [78, 65]
-        axes[1, 1].barh(diplomados, finalizacion, color=['#88B0D3', '#FEB236'])
-        axes[1, 1].set_title('Tasa de Finalizacion por Diplomado (%)')
-        axes[1, 1].set_xlabel('Porcentaje')
-
-        plt.tight_layout()
-
-        # Integrar en tkinter
         canvas = FigureCanvasTkAgg(fig, parent)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        # Hacer clickeable
+        canvas.mpl_connect('button_press_event',
+                          lambda event: self.show_chart_data(data_key))
+
+    def create_bar_chart(self, parent, data_key):
+        """Crear gráfica de barras interactiva"""
+        data = self.chart_data[data_key]
+        fig, ax = plt.subplots(figsize=(5, 4))
+        fig.patch.set_facecolor('#2b3e50')
+        ax.set_facecolor('#2b3e50')
+
+        ax.bar(data['labels'], data['values'], color='#6B5B95')
+        ax.set_ylabel('Número de Usuarios', color='white')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        canvas.mpl_connect('button_press_event',
+                          lambda event: self.show_chart_data(data_key))
+
+    def create_line_chart(self, parent, data_key):
+        """Crear gráfica de línea interactiva"""
+        data = self.chart_data[data_key]
+        fig, ax = plt.subplots(figsize=(5, 4))
+        fig.patch.set_facecolor('#2b3e50')
+        ax.set_facecolor('#2b3e50')
+
+        ax.plot(data['labels'], data['values'], marker='o',
+               color='#82B366', linewidth=2, markersize=8)
+        ax.set_ylabel('Módulos Completados', color='white')
+        ax.tick_params(colors='white')
+        ax.grid(True, alpha=0.3, color='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        canvas.mpl_connect('button_press_event',
+                          lambda event: self.show_chart_data(data_key))
+
+    def create_horizontal_bar_chart(self, parent, data_key):
+        """Crear gráfica de barras horizontales interactiva"""
+        data = self.chart_data[data_key]
+        fig, ax = plt.subplots(figsize=(5, 4))
+        fig.patch.set_facecolor('#2b3e50')
+        ax.set_facecolor('#2b3e50')
+
+        colors = ['#88B0D3', '#FEB236']
+        ax.barh(data['labels'], data['values'], color=colors)
+        ax.set_xlabel('Porcentaje', color='white')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        canvas.mpl_connect('button_press_event',
+                          lambda event: self.show_chart_data(data_key))
+
+    def show_chart_data(self, data_key):
+        """Mostrar datos de la gráfica en una tabla popup"""
+        data = self.chart_data[data_key]
+
+        # Crear ventana popup
+        popup = tk.Toplevel(self.root)
+        popup.title(f"Datos: {data['title']}")
+        popup.geometry("500x400")
+
+        # Título
+        ttk.Label(popup, text=data['title'],
+                 font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Tabla de datos
+        tree_frame = ttk.Frame(popup)
+        tree_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
+
+        tree = ttk.Treeview(tree_frame, columns=('Categoría', 'Valor'),
+                           show='headings', height=10)
+        tree.heading('Categoría', text='Categoría')
+        tree.heading('Valor', text='Valor')
+        tree.column('Categoría', width=250, anchor='center')
+        tree.column('Valor', width=150, anchor='center')
+
+        # Insertar datos
+        for label, value in zip(data['labels'], data['values']):
+            tree.insert('', tk.END, values=(label, value))
+
+        tree.pack(fill=BOTH, expand=True)
+
+        # Botón cerrar
+        ttk.Button(popup, text="Cerrar",
+                  command=popup.destroy,
+                  bootstyle='secondary').pack(pady=10)
+
+    def refresh_dashboards(self):
+        """Refrescar dashboards con datos actuales"""
+        try:
+            # TODO: Cuando haya datos reales, actualizar desde BD
+            messagebox.showinfo("Actualizar Gráficas",
+                "Las gráficas se actualizarán automáticamente cuando se carguen datos reales desde el archivo Transcript.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al actualizar dashboards: {str(e)}")
 
     def search_user_by_id(self):
         """Buscar usuario por ID y mostrar su progreso en módulos"""

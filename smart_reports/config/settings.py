@@ -25,7 +25,7 @@ COLORS = {
 
 # Configuración de la aplicación
 APP_CONFIG = {
-    'title': 'SMART REPORTS - Instituto HP',
+    'title': 'SMART REPORTS - INSTITUTO HP',
     'version': '2.0',
     'geometry': '1400x800',
     'theme': 'darkly',

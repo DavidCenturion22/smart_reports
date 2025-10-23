@@ -44,7 +44,7 @@ class MainWindow:
 
     def verify_database_tables(self):
         """Verificar que las tablas necesarias existan"""
-        tables_needed = ['instituto_UnidadDeNegocio', 'instituto_Usuario', 'instituto_Modulo', 'instituto_ProgresoModulo']
+        tables_needed = ['dbo.UnidadDeNegocio', 'dbo.Instituto_Usuario', 'dbo.Modulo', 'dbo.ProgresoModulo']
         placeholders = ','.join(['?' for _ in tables_needed])
 
         try:
@@ -93,7 +93,7 @@ class MainWindow:
 
         # Botones de navegación
         nav_buttons = [
-            ("Estatus", self.show_estatus_panel),
+            ("Cruce de datos", self.show_estatus_panel),
             ("Dashboards", self.show_dashboards_panel),
             ("Consultas", self.show_consultas_panel),
             ("Configuracion", self.show_configuracion_panel)
@@ -372,9 +372,9 @@ class MainWindow:
         table_container.grid_rowconfigure(0, weight=1)
         table_container.grid_columnconfigure(0, weight=1)
 
-        # Configurar estilo de filas alternadas
-        self.results_tree.tag_configure('oddrow', background='#f0f0f0')
-        self.results_tree.tag_configure('evenrow', background='white')
+        # Configurar estilo de filas alternadas - ERROR 5: Fix white text on white background
+        self.results_tree.tag_configure('oddrow', background='#f0f0f0', foreground='black')
+        self.results_tree.tag_configure('evenrow', background='white', foreground='black')
 
     def show_configuracion_panel(self):
         """Panel de configuración"""
@@ -705,20 +705,24 @@ class MainWindow:
             messagebox.showwarning("Advertencia", "Ingrese un ID de usuario")
             return
 
-        # Consulta mejorada: mostrar módulos con estatus y fechas
+        # ERROR 7: Consulta completa con TODOS los campos de usuario
         self.cursor.execute("""
             SELECT
                 u.UserId,
                 u.Nombre,
+                u.Email,
+                un.NombreUnidad,
+                u.Nivel,
+                u.Division,
+                CASE WHEN u.Activo = 1 THEN 'Activo' ELSE 'Inactivo' END as Estado,
                 m.NombreModulo,
                 pm.EstatusModuloUsuario,
                 CONVERT(VARCHAR(10), pm.FechaInicio, 103) as FechaAsignacion,
-                CONVERT(VARCHAR(10), pm.FechaFinalizacion, 103) as FechaFinalizacion,
-                un.NombreUnidad
-            FROM instituto_Usuario u
-            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
-            LEFT JOIN instituto_Modulo m ON pm.IdModulo = m.IdModulo
+                CONVERT(VARCHAR(10), pm.FechaFinalizacion, 103) as FechaFinalizacion
+            FROM dbo.Instituto_Usuario u
+            LEFT JOIN dbo.UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN dbo.Modulo m ON pm.IdModulo = m.IdModulo
             WHERE u.UserId = ?
             ORDER BY m.NombreModulo
         """, (user_id,))
@@ -726,7 +730,7 @@ class MainWindow:
         results = self.cursor.fetchall()
         if results:
             self.display_search_results(results,
-                ['User ID', 'Nombre', 'Módulo', 'Estatus', 'Fecha Asignación', 'Fecha Finalización', 'Unidad'])
+                ['User ID', 'Nombre', 'Email', 'Unidad', 'Nivel', 'División', 'Estado', 'Módulo', 'Estatus Módulo', 'Fecha Inicio', 'Fecha Fin'])
         else:
             messagebox.showinfo("Sin resultados", "Usuario no encontrado")
 
@@ -734,7 +738,7 @@ class MainWindow:
         """Cargar unidades de negocio en el combobox"""
         try:
             self.cursor.execute("""
-                SELECT NombreUnidad FROM instituto_UnidadDeNegocio
+                SELECT NombreUnidad FROM dbo.UnidadDeNegocio
                 ORDER BY NombreUnidad
             """)
             units = [row[0] for row in self.cursor.fetchall()]
@@ -761,9 +765,9 @@ class MainWindow:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'En proceso' THEN 1 ELSE 0 END) as EnProceso,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados
-            FROM instituto_Usuario u
-            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM dbo.Instituto_Usuario u
+            LEFT JOIN dbo.UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE un.NombreUnidad = ?
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad
             ORDER BY u.Nombre
@@ -785,7 +789,7 @@ class MainWindow:
                     COUNT(CASE WHEN EstatusModuloUsuario = 'En proceso' THEN 1 END) as EnProceso,
                     COUNT(CASE WHEN EstatusModuloUsuario = 'Registrado' THEN 1 END) as Registrados,
                     COUNT(*) as Total
-                FROM instituto_ProgresoModulo
+                FROM dbo.ProgresoModulo
             """)
             result = self.cursor.fetchone()
 
@@ -814,9 +818,9 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
                 CONVERT(VARCHAR(10), u.FechaRegistro, 103) as FechaRegistro,
                 COUNT(DISTINCT pm.IdModulo) as TotalModulos,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
-            FROM instituto_Usuario u
-            LEFT JOIN instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM dbo.Instituto_Usuario u
+            LEFT JOIN dbo.UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -30, GETDATE())
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.FechaRegistro
             ORDER BY u.FechaRegistro DESC
@@ -830,12 +834,21 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
             messagebox.showinfo("Sin resultados", "No hay usuarios nuevos en los ultimos 30 dias")
 
     def display_search_results(self, results, columns):
-        """Mostrar resultados en el treeview con formato mejorado"""
-        # Limpiar treeview
+        """Mostrar resultados en el treeview con formato mejorado - ERROR 6: Fix column duplication"""
+        # Limpiar treeview - datos y columnas
         for item in self.results_tree.get_children():
             self.results_tree.delete(item)
 
-        # Configurar columnas
+        # ERROR 6 FIX: Limpiar completamente las columnas anteriores
+        old_columns = self.results_tree['columns']
+        if old_columns:
+            for col in old_columns:
+                try:
+                    self.results_tree.heading(col, text='')
+                except:
+                    pass
+
+        # Configurar nuevas columnas
         self.results_tree['columns'] = columns
 
         # Configurar cada columna con ancho automático y alineación
@@ -865,58 +878,161 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
             self.results_tree.insert('', tk.END, values=row, tags=(tag,))
 
     def add_new_user_dialog(self):
-        """Diálogo para agregar nuevo usuario"""
+        """ERROR 8: Diálogo completo para agregar nuevo usuario con validación"""
         dialog = tk.Toplevel(self.root)
-        dialog.title("Agregar Nuevo Usuario")
-        dialog.geometry("400x300")
+        dialog.title("Agregar Nuevo Usuario - INSTITUTO HP")
+        dialog.geometry("500x450")
+        dialog.resizable(False, False)
 
-        # Campos
-        fields = ['ID Usuario', 'Nombre', 'Email', 'Unidad de Negocio', 'Terminal']
+        # Frame principal con padding
+        main_frame = ttk.Frame(dialog, padding=20)
+        main_frame.pack(fill=BOTH, expand=True)
+
+        # Título
+        ttk.Label(main_frame, text="Agregar Nuevo Usuario",
+                 font=('Arial', 14, 'bold')).grid(row=0, column=0, columnspan=2, pady=(0, 20))
+
+        # Diccionario para almacenar widgets
         entries = {}
+        row_num = 1
 
-        for i, field in enumerate(fields):
-            ttk.Label(dialog, text=field + ":").grid(row=i, column=0, padx=10, pady=5, sticky='e')
-            entry = ttk.Entry(dialog, width=30)
-            entry.grid(row=i, column=1, padx=10, pady=5)
-            entries[field] = entry
+        # Campo 1: User ID (obligatorio)
+        ttk.Label(main_frame, text="* User ID:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['user_id'] = ttk.Entry(main_frame, width=35)
+        entries['user_id'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+        row_num += 1
+
+        # Campo 2: Nombre (obligatorio)
+        ttk.Label(main_frame, text="* Nombre:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['nombre'] = ttk.Entry(main_frame, width=35)
+        entries['nombre'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+        row_num += 1
+
+        # Campo 3: Email (obligatorio)
+        ttk.Label(main_frame, text="* Email:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['email'] = ttk.Entry(main_frame, width=35)
+        entries['email'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+        row_num += 1
+
+        # Campo 4: Unidad de Negocio (combobox)
+        ttk.Label(main_frame, text="Unidad de Negocio:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['unidad'] = ttk.Combobox(main_frame, width=32, state='readonly')
+        entries['unidad'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+
+        # Cargar unidades de negocio
+        try:
+            self.cursor.execute("SELECT IdUnidadDeNegocio, NombreUnidad FROM dbo.UnidadDeNegocio ORDER BY NombreUnidad")
+            unidades = self.cursor.fetchall()
+            entries['unidad']['values'] = [f"{u[0]} - {u[1]}" for u in unidades]
+            entries['unidad_data'] = {f"{u[0]} - {u[1]}": u[0] for u in unidades}
+        except Exception as e:
+            print(f"Error cargando unidades: {e}")
+            entries['unidad']['values'] = []
+            entries['unidad_data'] = {}
+        row_num += 1
+
+        # Campo 5: Nivel
+        ttk.Label(main_frame, text="Nivel:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['nivel'] = ttk.Entry(main_frame, width=35)
+        entries['nivel'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+        row_num += 1
+
+        # Campo 6: División
+        ttk.Label(main_frame, text="División:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['division'] = ttk.Entry(main_frame, width=35)
+        entries['division'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+        row_num += 1
+
+        # Campo 7: Estado (combobox)
+        ttk.Label(main_frame, text="Estado:").grid(row=row_num, column=0, padx=10, pady=8, sticky='e')
+        entries['activo'] = ttk.Combobox(main_frame, width=32, state='readonly')
+        entries['activo']['values'] = ['Activo', 'Inactivo']
+        entries['activo'].current(0)  # Activo por defecto
+        entries['activo'].grid(row=row_num, column=1, padx=10, pady=8, sticky='w')
+        row_num += 1
+
+        # Nota de campos obligatorios
+        ttk.Label(main_frame, text="* Campos obligatorios",
+                 font=('Arial', 8, 'italic')).grid(row=row_num, column=0, columnspan=2, pady=(10, 0))
+        row_num += 1
+
+        def validate_email(email):
+            """Validación básica de email"""
+            import re
+            pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            return re.match(pattern, email) is not None
 
         def save_user():
-            values = [entries[field].get() for field in fields]
-            if all(values[:3]):  # Los primeros 3 campos son obligatorios
-                try:
-                    user_id = values[0]
-                    nombre = values[1]
-                    email = values[2]
-                    unidad_nombre = values[3]
-                    terminal = values[4]
+            """Guardar nuevo usuario con validación completa"""
+            # Obtener valores
+            user_id = entries['user_id'].get().strip()
+            nombre = entries['nombre'].get().strip()
+            email = entries['email'].get().strip()
+            unidad_seleccionada = entries['unidad'].get()
+            nivel = entries['nivel'].get().strip()
+            division = entries['division'].get().strip()
+            estado = entries['activo'].get()
 
-                    # Obtener IdUnidadDeNegocio
-                    id_unidad = None
-                    if unidad_nombre:
-                        self.cursor.execute("""
-                            SELECT IdUnidadDeNegocio FROM instituto_UnidadDeNegocio WHERE NombreUnidad = ?
-                        """, (unidad_nombre,))
-                        result = self.cursor.fetchone()
-                        if result:
-                            id_unidad = result[0]
+            # Validaciones
+            if not user_id:
+                messagebox.showwarning("Validación", "El User ID es obligatorio")
+                entries['user_id'].focus()
+                return
 
-                    self.cursor.execute("""
-                        INSERT INTO instituto_Usuario (UserId, Nombre, Email, IdUnidadDeNegocio)
-                        VALUES (?, ?, ?, ?)
-                    """, (user_id, nombre, email, id_unidad))
-                    self.db.commit()
-                    self.log_movement(f"Nuevo usuario agregado: {nombre}")
-                    messagebox.showinfo("Exito", "Usuario agregado correctamente")
-                    dialog.destroy()
-                except Exception as e:
-                    messagebox.showerror("Error", f"Error al agregar usuario: {str(e)}")
-            else:
-                messagebox.showwarning("Advertencia", "Complete los campos obligatorios")
+            if not nombre:
+                messagebox.showwarning("Validación", "El Nombre es obligatorio")
+                entries['nombre'].focus()
+                return
 
-        ttk.Button(dialog, text="Guardar", command=save_user,
-                  bootstyle='success').grid(row=len(fields), column=0, pady=20)
-        ttk.Button(dialog, text="Cancelar", command=dialog.destroy,
-                  bootstyle='danger').grid(row=len(fields), column=1, pady=20)
+            if not email:
+                messagebox.showwarning("Validación", "El Email es obligatorio")
+                entries['email'].focus()
+                return
+
+            if not validate_email(email):
+                messagebox.showwarning("Validación", "El formato del Email no es válido")
+                entries['email'].focus()
+                return
+
+            # Obtener IdUnidadDeNegocio
+            id_unidad = None
+            if unidad_seleccionada and unidad_seleccionada in entries['unidad_data']:
+                id_unidad = entries['unidad_data'][unidad_seleccionada]
+
+            # Convertir estado a bit
+            activo = 1 if estado == 'Activo' else 0
+
+            try:
+                # Verificar si el usuario ya existe
+                self.cursor.execute("SELECT UserId FROM dbo.Instituto_Usuario WHERE UserId = ?", (user_id,))
+                if self.cursor.fetchone():
+                    messagebox.showerror("Error", f"El usuario {user_id} ya existe en la base de datos")
+                    return
+
+                # Insertar nuevo usuario
+                self.cursor.execute("""
+                    INSERT INTO dbo.Instituto_Usuario
+                    (UserId, Nombre, Email, IdUnidadDeNegocio, Nivel, Division, Activo)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, nombre, email, id_unidad, nivel or None, division or None, activo))
+
+                self.db.commit()
+                self.log_movement(f"✓ Nuevo usuario agregado: {nombre} ({user_id})")
+                messagebox.showinfo("Éxito", f"Usuario {nombre} agregado correctamente")
+                dialog.destroy()
+
+            except Exception as e:
+                self.db.rollback()
+                messagebox.showerror("Error", f"Error al agregar usuario:\n{str(e)}")
+
+        # Botones
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=row_num, column=0, columnspan=2, pady=20)
+
+        ttk.Button(button_frame, text="Guardar", command=save_user,
+                  bootstyle='success', width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancelar", command=dialog.destroy,
+                  bootstyle='secondary', width=15).pack(side='left', padx=5)
 
     def manage_modules_dialog(self):
         """Diálogo para gestionar módulos"""
@@ -941,7 +1057,7 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
 
         # Cargar módulos existentes
         try:
-            self.cursor.execute("SELECT * FROM instituto_Modulo")
+            self.cursor.execute("SELECT * FROM dbo.Modulo")
             for row in self.cursor.fetchall():
                 tree.insert('', tk.END, values=row)
         except Exception as e:

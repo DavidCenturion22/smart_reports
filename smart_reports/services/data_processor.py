@@ -118,6 +118,19 @@ class TranscriptProcessor:
 
         return normalized_df
 
+    def extract_module_number(self, titulo: str) -> Optional[int]:
+        """
+        Extrae el número del módulo del título usando regex MÓDULO 1.X
+        Ejemplo: "MÓDULO 1.2 - Introducción" -> 2
+        """
+        if pd.isna(titulo):
+            return None
+
+        match = re.search(r'MÓDULO\s+1\.(\d+)', str(titulo), re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
     def convert_excel_date(self, excel_date) -> Optional[str]:
         """
         Convierte fechas de Excel a formato ISO
@@ -216,9 +229,20 @@ class TranscriptProcessor:
     def process_file(self, file_path: str) -> Dict:
         """
         Procesa el archivo completo y retorna estadísticas
+        IMPORTANTE: Solo procesa filas con "MÓDULO 1.X" en el título
         """
         # Leer y normalizar el archivo
         df = self.detect_file_structure(file_path)
+
+        # CRITICAL: Filtrar solo filas con MÓDULO 1.* en el título
+        print(f"\nTotal de registros antes del filtro: {len(df)}")
+        df = df[df['titulo_modulo'].str.contains(r'MÓDULO\s+1\.\d+', case=False, na=False, regex=True)]
+        print(f"Registros después de filtrar MÓDULO 1.*: {len(df)}")
+
+        # CRITICAL: Filtrar solo estados válidos
+        valid_states = ['Terminado', 'En Progreso', 'Registrado', 'En progreso']
+        df = df[df['estado'].isin(valid_states)]
+        print(f"Registros después de filtrar estados válidos: {len(df)}")
 
         # Estadísticas iniciales
         self.stats = {
@@ -290,10 +314,11 @@ class TranscriptProcessor:
     def process_user(self, user_id: str, nombre: str) -> bool:
         """
         Procesa un usuario y lo inserta si es nuevo
+        Tabla: dbo.Instituto_Usuario
         """
         try:
             # Verificar si el usuario existe
-            self.cursor.execute("SELECT UserId FROM instituto_Usuario WHERE UserId = ?", (user_id,))
+            self.cursor.execute("SELECT UserId FROM dbo.Instituto_Usuario WHERE UserId = ?", (user_id,))
 
             if not self.cursor.fetchone():
                 # Extraer información adicional del nombre si es posible
@@ -301,7 +326,7 @@ class TranscriptProcessor:
 
                 # Insertar nuevo usuario
                 self.cursor.execute("""
-                    INSERT INTO instituto_Usuario (UserId, Nombre, Email, TipoDeCorreo)
+                    INSERT INTO dbo.Instituto_Usuario (UserId, Nombre, Email, TipoDeCorreo)
                     VALUES (?, ?, ?, 'Corporativo')
                 """, (user_id, nombre, email))
 
@@ -316,30 +341,35 @@ class TranscriptProcessor:
     def process_module(self, titulo: str) -> int:
         """
         Procesa un módulo y retorna su ID
-        Solo guarda el título del módulo
+        CRÍTICO: Extrae el número del módulo del título (MÓDULO 1.X -> X)
+        Tabla: dbo.Modulo
         """
         try:
-            # Buscar si el módulo ya existe
-            self.cursor.execute("SELECT IdModulo FROM instituto_Modulo WHERE NombreModulo = ?", (titulo,))
+            # Extraer el número del módulo del título
+            module_number = self.extract_module_number(titulo)
+
+            if module_number is None:
+                self.stats['errores'].append(f"No se pudo extraer número de módulo de: {titulo}")
+                return -1
+
+            # Verificar si el módulo ya existe por su número
+            self.cursor.execute("SELECT IdModulo FROM dbo.Modulo WHERE IdModulo = ?", (module_number,))
             result = self.cursor.fetchone()
 
             if result:
                 return result[0]
 
-            # Insertar nuevo módulo (solo con título)
+            # Insertar nuevo módulo con IdModulo específico
             self.cursor.execute("""
-                INSERT INTO instituto_Modulo (NombreModulo, FechaDeAsignacion)
-                VALUES (?, GETDATE())
-            """, (titulo,))
+                SET IDENTITY_INSERT dbo.Modulo ON;
+                INSERT INTO dbo.Modulo (IdModulo, NombreModulo, FechaDeAsignacion)
+                VALUES (?, ?, GETDATE());
+                SET IDENTITY_INSERT dbo.Modulo OFF;
+            """, (module_number, titulo))
 
             self.conn.commit()
-
-            # Obtener el ID del módulo recién insertado
-            self.cursor.execute("SELECT @@IDENTITY")
-            module_id = int(self.cursor.fetchone()[0])
-
             self.stats['modulos_nuevos'] += 1
-            return module_id
+            return module_number
 
         except Exception as e:
             self.stats['errores'].append(f"Error procesando módulo {titulo}: {str(e)}")
@@ -348,84 +378,95 @@ class TranscriptProcessor:
     def process_inscription(self, row: pd.Series) -> bool:
         """
         Procesa una inscripción (progreso de módulo)
-        Mapea:
+        CRÍTICO: Mapea a dbo.ProgresoModulo
+        Mapeo de columnas:
+        - "Identificación de usuario" -> UserId
+        - "Título de la capacitación" -> Extrae IdModulo con regex MÓDULO 1.X
+        - "Estado del expediente" -> EstatusModuloUsuario (normalizado)
         - "Fecha asignada del expediente" -> FechaInicio
         - "Fecha de finalización de expediente" -> FechaFinalizacion
-        - "Estado del expediente" -> EstatusModuloUsuario
         """
         try:
             user_id = str(row['id_usuario'])
             titulo_modulo = row['titulo_modulo']
+
+            # Extraer el número del módulo del título
+            module_id = self.extract_module_number(titulo_modulo)
+
+            if module_id is None:
+                self.stats['errores'].append(f"No se pudo extraer IdModulo de: {titulo_modulo}")
+                return False
+
+            # Normalizar estado
             estado = self.normalize_status(row.get('estado'))
 
-            # fecha_inicio viene de "Fecha asignada del expediente"
+            # Convertir fechas
             fecha_inicio = self.convert_excel_date(row.get('fecha_inicio'))
-            # fecha_fin viene de "Fecha de finalización de expediente"
             fecha_fin = self.convert_excel_date(row.get('fecha_fin'))
 
-            # Obtener ID del módulo
-            self.cursor.execute("SELECT IdModulo FROM instituto_Modulo WHERE NombreModulo = ?", (titulo_modulo,))
-            result = self.cursor.fetchone()
-
-            if not result:
-                # Si el módulo no existe, crearlo primero
+            # Asegurar que el módulo existe
+            self.cursor.execute("SELECT IdModulo FROM dbo.Modulo WHERE IdModulo = ?", (module_id,))
+            if not self.cursor.fetchone():
+                # Crear el módulo si no existe
                 module_id = self.process_module(titulo_modulo)
-            else:
-                module_id = result[0]
+                if module_id <= 0:
+                    return False
 
-            if module_id > 0:
-                # Verificar si ya existe la inscripción
+            # UPSERT: Verificar si ya existe la inscripción (UserId + IdModulo)
+            self.cursor.execute("""
+                SELECT IdInscripcion FROM dbo.ProgresoModulo
+                WHERE UserId = ? AND IdModulo = ?
+            """, (user_id, module_id))
+
+            existing = self.cursor.fetchone()
+
+            if existing:
+                # Actualizar inscripción existente
                 self.cursor.execute("""
-                    SELECT IdInscripcion FROM instituto_ProgresoModulo
+                    UPDATE dbo.ProgresoModulo
+                    SET EstatusModuloUsuario = ?,
+                        FechaInicio = ?,
+                        FechaFinalizacion = ?,
+                        FechaUltimaActualizacion = GETDATE()
                     WHERE UserId = ? AND IdModulo = ?
-                """, (user_id, module_id))
+                """, (estado, fecha_inicio, fecha_fin, user_id, module_id))
+            else:
+                # Insertar nueva inscripción
+                self.cursor.execute("""
+                    INSERT INTO dbo.ProgresoModulo
+                    (UserId, IdModulo, EstatusModuloUsuario, FechaInicio, FechaFinalizacion)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (user_id, module_id, estado, fecha_inicio, fecha_fin))
 
-                existing = self.cursor.fetchone()
-
-                if existing:
-                    # Actualizar inscripción existente
-                    self.cursor.execute("""
-                        UPDATE instituto_ProgresoModulo
-                        SET EstatusModuloUsuario = ?,
-                            FechaInicio = ?,
-                            FechaFinalizacion = ?,
-                            FechaUltimaActualizacion = GETDATE()
-                        WHERE UserId = ? AND IdModulo = ?
-                    """, (estado, fecha_inicio, fecha_fin, user_id, module_id))
-                else:
-                    # Insertar nueva inscripción
-                    self.cursor.execute("""
-                        INSERT INTO instituto_ProgresoModulo
-                        (UserId, IdModulo, EstatusModuloUsuario, FechaInicio, FechaFinalizacion)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (user_id, module_id, estado, fecha_inicio, fecha_fin))
-
-                self.stats['inscripciones_actualizadas'] += 1
-                return True
+            self.stats['inscripciones_actualizadas'] += 1
+            return True
 
         except Exception as e:
             self.stats['errores'].append(f"Error procesando inscripción: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
         return False
 
     def get_summary_stats(self) -> Dict:
         """
         Obtiene estadísticas generales de la base de datos
+        Tablas: dbo.Instituto_Usuario, dbo.Modulo, dbo.ProgresoModulo, dbo.UnidadDeNegocio
         """
         stats = {}
 
         # Total de usuarios
-        self.cursor.execute("SELECT COUNT(*) FROM instituto_Usuario")
+        self.cursor.execute("SELECT COUNT(*) FROM dbo.Instituto_Usuario")
         stats['total_usuarios'] = self.cursor.fetchone()[0]
 
         # Total de módulos
-        self.cursor.execute("SELECT COUNT(*) FROM instituto_Modulo")
+        self.cursor.execute("SELECT COUNT(*) FROM dbo.Modulo")
         stats['total_modulos'] = self.cursor.fetchone()[0]
 
         # Estados de progreso
         self.cursor.execute("""
             SELECT EstatusModuloUsuario, COUNT(*)
-            FROM instituto_ProgresoModulo
+            FROM dbo.ProgresoModulo
             GROUP BY EstatusModuloUsuario
         """)
         stats['estados'] = dict(self.cursor.fetchall())
@@ -433,8 +474,8 @@ class TranscriptProcessor:
         # Usuarios por unidad de negocio
         self.cursor.execute("""
             SELECT un.NombreUnidad, COUNT(u.UserId)
-            FROM instituto_UnidadDeNegocio un
-            LEFT JOIN instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            FROM dbo.UnidadDeNegocio un
+            LEFT JOIN dbo.Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
             GROUP BY un.IdUnidadDeNegocio, un.NombreUnidad
         """)
         stats['usuarios_por_unidad'] = dict(self.cursor.fetchall())
@@ -452,6 +493,7 @@ class ReportGenerator:
     def get_user_progress(self, user_id: str) -> pd.DataFrame:
         """
         Obtiene el progreso completo de un usuario
+        Tablas: dbo.ProgresoModulo, dbo.Modulo
         """
         query = """
             SELECT
@@ -460,8 +502,8 @@ class ReportGenerator:
                 pm.CalificacionModuloUsuario,
                 pm.FechaInicio,
                 pm.FechaFinalizacion
-            FROM instituto_ProgresoModulo pm
-            JOIN instituto_Modulo m ON pm.IdModulo = m.IdModulo
+            FROM dbo.ProgresoModulo pm
+            JOIN dbo.Modulo m ON pm.IdModulo = m.IdModulo
             WHERE pm.UserId = ?
             ORDER BY pm.FechaInicio DESC
         """
@@ -471,6 +513,7 @@ class ReportGenerator:
     def get_module_stats(self) -> pd.DataFrame:
         """
         Obtiene estadísticas por módulo
+        Tablas: dbo.Modulo, dbo.ProgresoModulo
         """
         query = """
             SELECT
@@ -481,8 +524,8 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioCalificacion
-            FROM instituto_Modulo m
-            LEFT JOIN instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
+            FROM dbo.Modulo m
+            LEFT JOIN dbo.ProgresoModulo pm ON m.IdModulo = pm.IdModulo
             GROUP BY m.IdModulo, m.NombreModulo
             ORDER BY TotalUsuarios DESC
         """
@@ -492,6 +535,7 @@ class ReportGenerator:
     def get_business_unit_report(self, unit_id: int = None) -> pd.DataFrame:
         """
         Reporte por unidad de negocio
+        Tablas: dbo.UnidadDeNegocio, dbo.Instituto_Usuario, dbo.ProgresoModulo
         """
         query = """
             SELECT
@@ -501,9 +545,9 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as ModulosCompletados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioGeneral
-            FROM instituto_UnidadDeNegocio un
-            LEFT JOIN instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
-            LEFT JOIN instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM dbo.UnidadDeNegocio un
+            LEFT JOIN dbo.Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            LEFT JOIN dbo.ProgresoModulo pm ON u.UserId = pm.UserId
         """
 
         if unit_id:
@@ -516,13 +560,14 @@ class ReportGenerator:
     def get_completion_trends(self, days: int = 30) -> pd.DataFrame:
         """
         Obtiene tendencias de completación
+        Tabla: dbo.ProgresoModulo
         """
         query = f"""
             SELECT
                 CAST(FechaFinalizacion AS DATE) as Fecha,
                 COUNT(*) as ModulosCompletados,
                 COUNT(DISTINCT UserId) as UsuariosActivos
-            FROM instituto_ProgresoModulo
+            FROM dbo.ProgresoModulo
             WHERE EstatusModuloUsuario = 'Completado'
                 AND FechaFinalizacion >= DATEADD(day, -{days}, GETDATE())
             GROUP BY CAST(FechaFinalizacion AS DATE)

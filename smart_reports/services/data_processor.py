@@ -31,9 +31,17 @@ class TranscriptProcessor:
         # Buscar la fila donde empiezan los headers reales
         header_row = 0
         for i in range(len(df)):
-            # Buscar patrones comunes de headers
+            # Buscar patrones comunes de headers (español e inglés)
             row_values = df.iloc[i].astype(str).values
-            if any('Nombre completo' in v or 'User Name' in v or 'Usuario' in v for v in row_values):
+            # Buscar palabras clave en español e inglés
+            header_keywords = [
+                'Nombre completo', 'User Name', 'Usuario',
+                'Identificación', 'User ID',
+                'Título', 'Training Title',
+                'Estado', 'Transcript Status',
+                'Capacitación', 'Training'
+            ]
+            if any(keyword in v for v in row_values for keyword in header_keywords):
                 header_row = i
                 break
 
@@ -66,39 +74,46 @@ class TranscriptProcessor:
             col_lower = str(col).lower().strip()
 
             # Identificación de usuario / User ID
-            if 'identificación' in col_lower and 'usuario' in col_lower:
-                column_map[col] = 'id_usuario'
-            elif col_lower == 'user id':
+            if ('identificación' in col_lower and 'usuario' in col_lower) or \
+               'user id' in col_lower or \
+               col_lower == 'userid' or \
+               col_lower == 'id usuario':
                 column_map[col] = 'id_usuario'
 
             # Nombre completo del usuario / User Name
-            elif 'nombre completo' in col_lower:
-                column_map[col] = 'nombre_usuario'
-            elif col_lower == 'user name':
+            elif 'nombre completo' in col_lower or \
+                 'user name' in col_lower or \
+                 col_lower == 'username' or \
+                 col_lower == 'nombre usuario':
                 column_map[col] = 'nombre_usuario'
 
             # Título de la capacitación / Training Title
-            elif 'título' in col_lower and 'capacitación' in col_lower:
-                column_map[col] = 'titulo_modulo'
-            elif col_lower == 'training title':
+            elif ('título' in col_lower and 'capacitación' in col_lower) or \
+                 'training title' in col_lower or \
+                 'titulo capacitacion' in col_lower or \
+                 'course title' in col_lower:
                 column_map[col] = 'titulo_modulo'
 
             # Estado del expediente / Transcript Status
-            elif 'estado' in col_lower and 'expediente' in col_lower:
-                column_map[col] = 'estado'
-            elif col_lower == 'transcript status':
+            elif ('estado' in col_lower and 'expediente' in col_lower) or \
+                 'transcript status' in col_lower or \
+                 col_lower == 'status' or \
+                 col_lower == 'estado':
                 column_map[col] = 'estado'
 
             # Fecha asignada del expediente -> FechaInicio en BD
-            elif 'fecha asignada' in col_lower and 'expediente' in col_lower:
-                column_map[col] = 'fecha_inicio'
-            elif col_lower == 'transcript assigned date':
+            elif ('fecha asignada' in col_lower and 'expediente' in col_lower) or \
+                 'transcript assigned date' in col_lower or \
+                 'assigned date' in col_lower or \
+                 'fecha asignada' in col_lower:
                 column_map[col] = 'fecha_inicio'
 
             # Fecha de finalización de expediente -> FechaFinalizacion en BD
-            elif 'fecha' in col_lower and 'finalización' in col_lower and 'expediente' in col_lower:
-                column_map[col] = 'fecha_fin'
-            elif col_lower == 'transcript completed date':
+            elif ('fecha' in col_lower and 'finalización' in col_lower and 'expediente' in col_lower) or \
+                 'transcript completed date' in col_lower or \
+                 'completed date' in col_lower or \
+                 'fecha finalizacion' in col_lower or \
+                 ('fecha' in col_lower and 'completado' in col_lower):
                 column_map[col] = 'fecha_fin'
 
         # Aplicar el mapeo

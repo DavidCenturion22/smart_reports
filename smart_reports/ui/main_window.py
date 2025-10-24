@@ -374,7 +374,6 @@ class MainWindow:
             self.cursor.execute("""
                 SELECT IdModulo, NombreModulo
                 FROM Instituto_Modulo
-                WHERE Activo = 1
                 ORDER BY IdModulo
             """)
 
@@ -780,15 +779,15 @@ class MainWindow:
             self.movements_text.insert(tk.END, log_entry)
             self.movements_text.see(tk.END)
 
-        # Guardar en BD
-        try:
-            self.cursor.execute("""
-                INSERT INTO HistorialCambios (TipoCambio, DescripcionCambio, UsuarioSistema)
-                VALUES (?, ?, ?)
-            """, ('UPDATE', message, 'Sistema'))
-            self.db.commit()
-        except Exception as e:
-            print(f"Error al guardar en historial: {e}")
+        # DESHABILITADO: No guardar en HistorialCambios (tabla no existe)
+        # try:
+        #     self.cursor.execute("""
+        #         INSERT INTO HistorialCambios (TipoCambio, DescripcionCambio, UsuarioSistema)
+        #         VALUES (?, ?, ?)
+        #     """, ('UPDATE', message, 'Sistema'))
+        #     self.db.commit()
+        # except Exception as e:
+        #     print(f"Error al guardar en historial: {e}")
 
     # ========== FUNCIONES ANTIGUAS COMENTADAS (NO SE USAN CON NUEVO DISEÑO) ==========
     # def create_interactive_charts(self, parent):
@@ -841,7 +840,6 @@ class MainWindow:
                 un.NombreUnidad,
                 u.Nivel,
                 u.Division,
-                CASE WHEN u.Activo = 1 THEN 'Activo' ELSE 'Inactivo' END as Estado,
                 m.NombreModulo,
                 pm.EstatusModuloUsuario,
                 CONVERT(VARCHAR(10), pm.FechaInicio, 103) as FechaAsignacion,
@@ -857,7 +855,7 @@ class MainWindow:
         results = self.cursor.fetchall()
         if results:
             self.display_search_results(results,
-                ['User ID', 'Nombre', 'Email', 'Unidad', 'Nivel', 'División', 'Estado', 'Módulo', 'Estatus Módulo', 'Fecha Inicio', 'Fecha Fin'])
+                ['User ID', 'Nombre', 'Email', 'Unidad', 'Nivel', 'División', 'Módulo', 'Estatus Módulo', 'Fecha Inicio', 'Fecha Fin'])
         else:
             messagebox.showinfo("Sin resultados", "Usuario no encontrado")
 
@@ -935,28 +933,26 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
             messagebox.showerror("Error", f"Error al obtener estadísticas: {str(e)}")
 
     def query_new_users(self):
-        """Consultar usuarios nuevos con su progreso"""
+        """Consultar todos los usuarios con su progreso"""
         self.cursor.execute("""
             SELECT
                 u.UserId,
                 u.Nombre,
                 u.Email,
                 un.NombreUnidad,
-                CONVERT(VARCHAR(10), u.FechaRegistro, 103) as FechaRegistro,
                 COUNT(DISTINCT pm.IdModulo) as TotalModulos,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
             FROM Instituto_Usuario u
             LEFT JOIN Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
             LEFT JOIN Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
-            WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -30, GETDATE())
-            GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.FechaRegistro
-            ORDER BY u.FechaRegistro DESC
+            GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad
+            ORDER BY u.UserId
         """)
 
         results = self.cursor.fetchall()
         if results:
             self.display_search_results(results,
-                ['User ID', 'Nombre', 'Email', 'Unidad', 'Fecha Registro', 'Total Módulos', 'Completados'])
+                ['User ID', 'Nombre', 'Email', 'Unidad', 'Total Módulos', 'Completados'])
         else:
             messagebox.showinfo("Sin resultados", "No hay usuarios nuevos en los ultimos 30 dias")
 

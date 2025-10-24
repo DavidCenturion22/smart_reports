@@ -118,18 +118,46 @@ class TranscriptProcessor:
 
         return normalized_df
 
-    def extract_module_number(self, titulo: str) -> Optional[int]:
+    def extract_module_info(self, titulo: str) -> tuple:
         """
-        Extrae el número del módulo del título usando regex MÓDULO 1.X
-        Ejemplo: "MÓDULO 1.2 - Introducción" -> 2
+        Extrae el número del módulo del título exacto de los 14 módulos
+        Retorna: (IdModulo, NombreCorto)
         """
         if pd.isna(titulo):
-            return None
+            return (None, None)
 
-        match = re.search(r'MÓDULO\s+1\.(\d+)', str(titulo), re.IGNORECASE)
+        titulo_upper = str(titulo).strip().upper()
+
+        # Diccionario de mapeo EXACTO de los 14 módulos
+        modulos_mapping = {
+            'MÓDULO 1. INTRODUCCIÓN A LA FILOSOFÍA HUTCHISON PORTS': (1, 'Filosofía HP'),
+            'MÓDULO 2. SOSTENIBILIDAD, NUESTRO COMPROMISO CON EL FUTURO': (2, 'Sostenibilidad'),
+            'MÓDULO 3. INTRODUCCIÓN A LAS OPERACIONES': (3, 'Operaciones'),
+            'MÓDULO 4. RELACIONES LABORALES': (4, 'Relaciones Laborales'),
+            'MÓDULO 5. SEGURIDAD EN LAS OPERACIONES': (5, 'Seguridad'),
+            'MÓDULO 6. CIBERSEGURIDAD': (6, 'Ciberseguridad'),
+            'MÓDULO 7. ENTORNO LABORAL SALUDABLE': (7, 'Entorno Laboral'),
+            'MÓDULO 8. PROCESOS DE RECURSOS HUMANOS': (8, 'RRHH'),
+            'MÓDULO 9. PROGRAMAS DE BIENESTAR INTEGRAL': (9, 'Bienestar'),
+            'MÓDULO 10. DESARROLLO DE NUEVOS PRODUCTOS': (10, 'Nuevos Productos'),
+            'MÓDULO 11. PRODUCTOS DIGITALES DE HP': (11, 'Productos Digitales'),
+            'MÓDULO 12. TECNOLOGÍA: IMPULSO PARA LA EFICIENCIA Y PRODUCTIVIDAD': (12, 'Tecnología'),
+            'MÓDULO 13. ACTIVACIÓN DE PROTOCOLOS Y BRIGADAS DE CONTINGENCIA': (13, 'Contingencia'),
+            'MÓDULO 14. SISTEMA INTEGRADO DE GESTIÓN DE CALIDAD Y MEJORA CONTINUA': (14, 'Calidad'),
+        }
+
+        # Buscar coincidencia exacta primero
+        if titulo_upper in modulos_mapping:
+            return modulos_mapping[titulo_upper]
+
+        # Si no hay coincidencia exacta, buscar por patrón MÓDULO X.
+        match = re.search(r'MÓDULO\s+(\d+)\.', titulo_upper)
         if match:
-            return int(match.group(1))
-        return None
+            num = int(match.group(1))
+            if 1 <= num <= 14:
+                return (num, f'Módulo {num}')
+
+        return (None, None)
 
     def convert_excel_date(self, excel_date) -> Optional[str]:
         """
@@ -229,15 +257,15 @@ class TranscriptProcessor:
     def process_file(self, file_path: str) -> Dict:
         """
         Procesa el archivo completo y retorna estadísticas
-        IMPORTANTE: Solo procesa filas con "MÓDULO 1.X" en el título
+        IMPORTANTE: Ahora procesa TODOS los 14 módulos (MÓDULO 1. hasta MÓDULO 14.)
         """
         # Leer y normalizar el archivo
         df = self.detect_file_structure(file_path)
 
-        # CRITICAL: Filtrar solo filas con MÓDULO 1.* en el título
+        # CRITICAL: Filtrar solo filas con MÓDULO X. (1-14) en el título
         print(f"\nTotal de registros antes del filtro: {len(df)}")
-        df = df[df['titulo_modulo'].str.contains(r'MÓDULO\s+1\.\d+', case=False, na=False, regex=True)]
-        print(f"Registros después de filtrar MÓDULO 1.*: {len(df)}")
+        df = df[df['titulo_modulo'].str.contains(r'MÓDULO\s+\d+\.', case=False, na=False, regex=True)]
+        print(f"Registros después de filtrar MÓDULO 1-14: {len(df)}")
 
         # CRITICAL: Filtrar solo estados válidos
         valid_states = ['Terminado', 'En Progreso', 'Registrado', 'En progreso']
@@ -314,11 +342,11 @@ class TranscriptProcessor:
     def process_user(self, user_id: str, nombre: str) -> bool:
         """
         Procesa un usuario y lo inserta si es nuevo
-        Tabla: dbo.Instituto_Usuario
+        Tabla: Instituto_Usuario
         """
         try:
             # Verificar si el usuario existe
-            self.cursor.execute("SELECT UserId FROM dbo.Instituto_Usuario WHERE UserId = ?", (user_id,))
+            self.cursor.execute("SELECT UserId FROM Instituto_Usuario WHERE UserId = ?", (user_id,))
 
             if not self.cursor.fetchone():
                 # Extraer información adicional del nombre si es posible
@@ -326,7 +354,7 @@ class TranscriptProcessor:
 
                 # Insertar nuevo usuario
                 self.cursor.execute("""
-                    INSERT INTO dbo.Instituto_Usuario (UserId, Nombre, Email, TipoDeCorreo)
+                    INSERT INTO Instituto_Usuario (UserId, Nombre, Email, TipoDeCorreo)
                     VALUES (?, ?, ?, 'Corporativo')
                 """, (user_id, nombre, email))
 
@@ -341,35 +369,36 @@ class TranscriptProcessor:
     def process_module(self, titulo: str) -> int:
         """
         Procesa un módulo y retorna su ID
-        CRÍTICO: Extrae el número del módulo del título (MÓDULO 1.X -> X)
-        Tabla: dbo.Instituto_Modulo
+        CRÍTICO: Extrae el ID del módulo usando mapeo de 14 módulos exactos
+        Tabla: Instituto_Modulo
         """
         try:
-            # Extraer el número del módulo del título
-            module_number = self.extract_module_number(titulo)
+            # Extraer información del módulo (ID y nombre corto)
+            module_id, nombre_corto = self.extract_module_info(titulo)
 
-            if module_number is None:
-                self.stats['errores'].append(f"No se pudo extraer número de módulo de: {titulo}")
+            if module_id is None:
+                self.stats['errores'].append(f"No se pudo extraer IdModulo de: {titulo}")
                 return -1
 
             # Verificar si el módulo ya existe por su número
-            self.cursor.execute("SELECT IdModulo FROM dbo.Instituto_Modulo WHERE IdModulo = ?", (module_number,))
+            self.cursor.execute("SELECT IdModulo FROM Instituto_Modulo WHERE IdModulo = ?", (module_id,))
             result = self.cursor.fetchone()
 
             if result:
                 return result[0]
 
-            # Insertar nuevo módulo con IdModulo específico
+            # Insertar nuevo módulo con IdModulo específico y nombre corto
             self.cursor.execute("""
-                SET IDENTITY_INSERT dbo.Instituto_Modulo ON;
-                INSERT INTO dbo.Instituto_Modulo (IdModulo, NombreModulo, FechaDeAsignacion)
-                VALUES (?, ?, GETDATE());
-                SET IDENTITY_INSERT dbo.Instituto_Modulo OFF;
-            """, (module_number, titulo))
+                SET IDENTITY_INSERT Instituto_Modulo ON;
+                INSERT INTO Instituto_Modulo (IdModulo, NombreModulo, FechaDeAsignacion, Activo)
+                VALUES (?, ?, GETDATE(), 1);
+                SET IDENTITY_INSERT Instituto_Modulo OFF;
+            """, (module_id, nombre_corto))
 
             self.conn.commit()
             self.stats['modulos_nuevos'] += 1
-            return module_number
+            print(f"  ✓ Módulo {module_id} creado: {nombre_corto}")
+            return module_id
 
         except Exception as e:
             self.stats['errores'].append(f"Error procesando módulo {titulo}: {str(e)}")
@@ -378,7 +407,7 @@ class TranscriptProcessor:
     def process_inscription(self, row: pd.Series) -> bool:
         """
         Procesa una inscripción (progreso de módulo)
-        CRÍTICO: Mapea a dbo.Instituto_ProgresoModulo
+        CRÍTICO: Mapea a Instituto_ProgresoModulo
         Mapeo de columnas:
         - "Identificación de usuario" -> UserId
         - "Título de la capacitación" -> Extrae IdModulo con regex MÓDULO 1.X
@@ -390,8 +419,8 @@ class TranscriptProcessor:
             user_id = str(row['id_usuario'])
             titulo_modulo = row['titulo_modulo']
 
-            # Extraer el número del módulo del título
-            module_id = self.extract_module_number(titulo_modulo)
+            # Extraer el número del módulo del título usando mapeo de 14 módulos
+            module_id, _ = self.extract_module_info(titulo_modulo)
 
             if module_id is None:
                 self.stats['errores'].append(f"No se pudo extraer IdModulo de: {titulo_modulo}")
@@ -405,7 +434,7 @@ class TranscriptProcessor:
             fecha_fin = self.convert_excel_date(row.get('fecha_fin'))
 
             # Asegurar que el módulo existe
-            self.cursor.execute("SELECT IdModulo FROM dbo.Instituto_Modulo WHERE IdModulo = ?", (module_id,))
+            self.cursor.execute("SELECT IdModulo FROM Instituto_Modulo WHERE IdModulo = ?", (module_id,))
             if not self.cursor.fetchone():
                 # Crear el módulo si no existe
                 module_id = self.process_module(titulo_modulo)
@@ -414,7 +443,7 @@ class TranscriptProcessor:
 
             # UPSERT: Verificar si ya existe la inscripción (UserId + IdModulo)
             self.cursor.execute("""
-                SELECT IdInscripcion FROM dbo.Instituto_ProgresoModulo
+                SELECT IdInscripcion FROM Instituto_ProgresoModulo
                 WHERE UserId = ? AND IdModulo = ?
             """, (user_id, module_id))
 
@@ -423,7 +452,7 @@ class TranscriptProcessor:
             if existing:
                 # Actualizar inscripción existente
                 self.cursor.execute("""
-                    UPDATE dbo.Instituto_ProgresoModulo
+                    UPDATE Instituto_ProgresoModulo
                     SET EstatusModuloUsuario = ?,
                         FechaInicio = ?,
                         FechaFinalizacion = ?,
@@ -433,7 +462,7 @@ class TranscriptProcessor:
             else:
                 # Insertar nueva inscripción
                 self.cursor.execute("""
-                    INSERT INTO dbo.Instituto_ProgresoModulo
+                    INSERT INTO Instituto_ProgresoModulo
                     (UserId, IdModulo, EstatusModuloUsuario, FechaInicio, FechaFinalizacion)
                     VALUES (?, ?, ?, ?, ?)
                 """, (user_id, module_id, estado, fecha_inicio, fecha_fin))
@@ -451,22 +480,22 @@ class TranscriptProcessor:
     def get_summary_stats(self) -> Dict:
         """
         Obtiene estadísticas generales de la base de datos
-        Tablas: dbo.Instituto_Usuario, dbo.Instituto_Modulo, dbo.Instituto_ProgresoModulo, dbo.Instituto_UnidadDeNegocio
+        Tablas: Instituto_Usuario, Instituto_Modulo, Instituto_ProgresoModulo, Instituto_UnidadDeNegocio
         """
         stats = {}
 
         # Total de usuarios
-        self.cursor.execute("SELECT COUNT(*) FROM dbo.Instituto_Usuario")
+        self.cursor.execute("SELECT COUNT(*) FROM Instituto_Usuario")
         stats['total_usuarios'] = self.cursor.fetchone()[0]
 
         # Total de módulos
-        self.cursor.execute("SELECT COUNT(*) FROM dbo.Instituto_Modulo")
+        self.cursor.execute("SELECT COUNT(*) FROM Instituto_Modulo")
         stats['total_modulos'] = self.cursor.fetchone()[0]
 
         # Estados de progreso
         self.cursor.execute("""
             SELECT EstatusModuloUsuario, COUNT(*)
-            FROM dbo.Instituto_ProgresoModulo
+            FROM Instituto_ProgresoModulo
             GROUP BY EstatusModuloUsuario
         """)
         stats['estados'] = dict(self.cursor.fetchall())
@@ -474,8 +503,8 @@ class TranscriptProcessor:
         # Usuarios por unidad de negocio
         self.cursor.execute("""
             SELECT un.NombreUnidad, COUNT(u.UserId)
-            FROM dbo.Instituto_UnidadDeNegocio un
-            LEFT JOIN dbo.Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            FROM Instituto_UnidadDeNegocio un
+            LEFT JOIN Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
             GROUP BY un.IdUnidadDeNegocio, un.NombreUnidad
         """)
         stats['usuarios_por_unidad'] = dict(self.cursor.fetchall())
@@ -493,7 +522,7 @@ class ReportGenerator:
     def get_user_progress(self, user_id: str) -> pd.DataFrame:
         """
         Obtiene el progreso completo de un usuario
-        Tablas: dbo.Instituto_ProgresoModulo, dbo.Instituto_Modulo
+        Tablas: Instituto_ProgresoModulo, Instituto_Modulo
         """
         query = """
             SELECT
@@ -502,8 +531,8 @@ class ReportGenerator:
                 pm.CalificacionModuloUsuario,
                 pm.FechaInicio,
                 pm.FechaFinalizacion
-            FROM dbo.Instituto_ProgresoModulo pm
-            JOIN dbo.Instituto_Modulo m ON pm.IdModulo = m.IdModulo
+            FROM Instituto_ProgresoModulo pm
+            JOIN Instituto_Modulo m ON pm.IdModulo = m.IdModulo
             WHERE pm.UserId = ?
             ORDER BY pm.FechaInicio DESC
         """
@@ -513,7 +542,7 @@ class ReportGenerator:
     def get_module_stats(self) -> pd.DataFrame:
         """
         Obtiene estadísticas por módulo
-        Tablas: dbo.Instituto_Modulo, dbo.Instituto_ProgresoModulo
+        Tablas: Instituto_Modulo, Instituto_ProgresoModulo
         """
         query = """
             SELECT
@@ -524,8 +553,8 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioCalificacion
-            FROM dbo.Instituto_Modulo m
-            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
+            FROM Instituto_Modulo m
+            LEFT JOIN Instituto_ProgresoModulo pm ON m.IdModulo = pm.IdModulo
             GROUP BY m.IdModulo, m.NombreModulo
             ORDER BY TotalUsuarios DESC
         """
@@ -535,7 +564,7 @@ class ReportGenerator:
     def get_business_unit_report(self, unit_id: int = None) -> pd.DataFrame:
         """
         Reporte por unidad de negocio
-        Tablas: dbo.Instituto_UnidadDeNegocio, dbo.Instituto_Usuario, dbo.Instituto_ProgresoModulo
+        Tablas: Instituto_UnidadDeNegocio, Instituto_Usuario, Instituto_ProgresoModulo
         """
         query = """
             SELECT
@@ -545,9 +574,9 @@ class ReportGenerator:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as ModulosCompletados,
                 AVG(CASE WHEN pm.CalificacionModuloUsuario IS NOT NULL
                     THEN pm.CalificacionModuloUsuario END) as PromedioGeneral
-            FROM dbo.Instituto_UnidadDeNegocio un
-            LEFT JOIN dbo.Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
-            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM Instituto_UnidadDeNegocio un
+            LEFT JOIN Instituto_Usuario u ON un.IdUnidadDeNegocio = u.IdUnidadDeNegocio
+            LEFT JOIN Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
         """
 
         if unit_id:
@@ -560,14 +589,14 @@ class ReportGenerator:
     def get_completion_trends(self, days: int = 30) -> pd.DataFrame:
         """
         Obtiene tendencias de completación
-        Tabla: dbo.Instituto_ProgresoModulo
+        Tabla: Instituto_ProgresoModulo
         """
         query = f"""
             SELECT
                 CAST(FechaFinalizacion AS DATE) as Fecha,
                 COUNT(*) as ModulosCompletados,
                 COUNT(DISTINCT UserId) as UsuariosActivos
-            FROM dbo.Instituto_ProgresoModulo
+            FROM Instituto_ProgresoModulo
             WHERE EstatusModuloUsuario = 'Completado'
                 AND FechaFinalizacion >= DATEADD(day, -{days}, GETDATE())
             GROUP BY CAST(FechaFinalizacion AS DATE)

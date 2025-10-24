@@ -44,7 +44,7 @@ class MainWindow:
 
     def verify_database_tables(self):
         """Verificar que las tablas necesarias existan"""
-        tables_needed = ['dbo.Instituto_UnidadDeNegocio', 'dbo.Instituto_Usuario', 'dbo.Instituto_Modulo', 'dbo.Instituto_ProgresoModulo']
+        tables_needed = ['Instituto_UnidadDeNegocio', 'Instituto_Usuario', 'Instituto_Modulo', 'Instituto_ProgresoModulo']
         placeholders = ','.join(['?' for _ in tables_needed])
 
         try:
@@ -373,7 +373,7 @@ class MainWindow:
             # Consultar módulos reales de la base de datos
             self.cursor.execute("""
                 SELECT IdModulo, NombreModulo
-                FROM dbo.Instituto_Modulo
+                FROM Instituto_Modulo
                 WHERE Activo = 1
                 ORDER BY IdModulo
             """)
@@ -403,7 +403,7 @@ class MainWindow:
             # Consultar unidades reales de la base de datos
             self.cursor.execute("""
                 SELECT IdUnidadDeNegocio, NombreUnidad
-                FROM dbo.Instituto_UnidadDeNegocio
+                FROM Instituto_UnidadDeNegocio
                 ORDER BY NombreUnidad
             """)
 
@@ -846,10 +846,10 @@ class MainWindow:
                 pm.EstatusModuloUsuario,
                 CONVERT(VARCHAR(10), pm.FechaInicio, 103) as FechaAsignacion,
                 CONVERT(VARCHAR(10), pm.FechaFinalizacion, 103) as FechaFinalizacion
-            FROM dbo.Instituto_Usuario u
-            LEFT JOIN dbo.Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
-            LEFT JOIN dbo.Instituto_Modulo m ON pm.IdModulo = m.IdModulo
+            FROM Instituto_Usuario u
+            LEFT JOIN Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            LEFT JOIN Instituto_Modulo m ON pm.IdModulo = m.IdModulo
             WHERE u.UserId = ?
             ORDER BY m.NombreModulo
         """, (user_id,))
@@ -865,7 +865,7 @@ class MainWindow:
         """Cargar unidades de negocio en el combobox"""
         try:
             self.cursor.execute("""
-                SELECT NombreUnidad FROM dbo.Instituto_UnidadDeNegocio
+                SELECT NombreUnidad FROM Instituto_UnidadDeNegocio
                 ORDER BY NombreUnidad
             """)
             units = [row[0] for row in self.cursor.fetchall()]
@@ -892,9 +892,9 @@ class MainWindow:
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'En proceso' THEN 1 ELSE 0 END) as EnProceso,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Registrado' THEN 1 ELSE 0 END) as Registrados
-            FROM dbo.Instituto_Usuario u
-            LEFT JOIN dbo.Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM Instituto_Usuario u
+            LEFT JOIN Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE un.NombreUnidad = ?
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad
             ORDER BY u.Nombre
@@ -916,7 +916,7 @@ class MainWindow:
                     COUNT(CASE WHEN EstatusModuloUsuario = 'En proceso' THEN 1 END) as EnProceso,
                     COUNT(CASE WHEN EstatusModuloUsuario = 'Registrado' THEN 1 END) as Registrados,
                     COUNT(*) as Total
-                FROM dbo.Instituto_ProgresoModulo
+                FROM Instituto_ProgresoModulo
             """)
             result = self.cursor.fetchone()
 
@@ -945,9 +945,9 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
                 CONVERT(VARCHAR(10), u.FechaRegistro, 103) as FechaRegistro,
                 COUNT(DISTINCT pm.IdModulo) as TotalModulos,
                 SUM(CASE WHEN pm.EstatusModuloUsuario = 'Completado' THEN 1 ELSE 0 END) as Completados
-            FROM dbo.Instituto_Usuario u
-            LEFT JOIN dbo.Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
-            LEFT JOIN dbo.Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
+            FROM Instituto_Usuario u
+            LEFT JOIN Instituto_UnidadDeNegocio un ON u.IdUnidadDeNegocio = un.IdUnidadDeNegocio
+            LEFT JOIN Instituto_ProgresoModulo pm ON u.UserId = pm.UserId
             WHERE CAST(u.FechaRegistro AS DATE) >= DATEADD(day, -30, GETDATE())
             GROUP BY u.UserId, u.Nombre, u.Email, un.NombreUnidad, u.FechaRegistro
             ORDER BY u.FechaRegistro DESC
@@ -961,12 +961,12 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
             messagebox.showinfo("Sin resultados", "No hay usuarios nuevos en los ultimos 30 dias")
 
     def display_search_results(self, results, columns):
-        """Mostrar resultados en el treeview con formato mejorado - ERROR 6: Fix column duplication"""
+        """Mostrar resultados en el treeview con ANCHOS FIJOS por tipo de columna"""
         # Limpiar treeview - datos y columnas
         for item in self.results_tree.get_children():
             self.results_tree.delete(item)
 
-        # ERROR 6 FIX: Limpiar completamente las columnas anteriores
+        # Limpiar columnas anteriores
         old_columns = self.results_tree['columns']
         if old_columns:
             for col in old_columns:
@@ -978,31 +978,69 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
         # Configurar nuevas columnas
         self.results_tree['columns'] = columns
 
-        # Configurar cada columna con ancho automático y alineación
+        # Diccionario de anchos FIJOS por tipo de columna
+        column_widths = {
+            'User ID': {'width': 100, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'UserId': {'width': 100, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Nombre': {'width': 200, 'minwidth': 150, 'stretch': True, 'anchor': 'w'},
+            'Email': {'width': 220, 'minwidth': 200, 'stretch': True, 'anchor': 'w'},
+            'Unidad': {'width': 150, 'minwidth': 120, 'stretch': False, 'anchor': 'center'},
+            'NombreUnidad': {'width': 150, 'minwidth': 120, 'stretch': False, 'anchor': 'center'},
+            'Nivel': {'width': 100, 'minwidth': 80, 'stretch': False, 'anchor': 'center'},
+            'División': {'width': 120, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Division': {'width': 120, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Estado': {'width': 100, 'minwidth': 80, 'stretch': False, 'anchor': 'center'},
+            'Módulo': {'width': 180, 'minwidth': 150, 'stretch': True, 'anchor': 'w'},
+            'Estatus Módulo': {'width': 120, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Estatus': {'width': 120, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Fecha Inicio': {'width': 110, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Fecha Fin': {'width': 110, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Fecha Asignación': {'width': 110, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Fecha Finalización': {'width': 110, 'minwidth': 100, 'stretch': False, 'anchor': 'center'},
+            'Total Módulos': {'width': 110, 'minwidth': 90, 'stretch': False, 'anchor': 'center'},
+            'Completados': {'width': 110, 'minwidth': 90, 'stretch': False, 'anchor': 'center'},
+            'En Proceso': {'width': 110, 'minwidth': 90, 'stretch': False, 'anchor': 'center'},
+            'Registrados': {'width': 110, 'minwidth': 90, 'stretch': False, 'anchor': 'center'},
+            'Activo': {'width': 80, 'minwidth': 60, 'stretch': False, 'anchor': 'center'},
+        }
+
+        # Configurar cada columna con ancho FIJO
         for col in columns:
+            # Obtener configuración de la columna o usar valores por defecto
+            config = column_widths.get(col, {
+                'width': 120,
+                'minwidth': 100,
+                'stretch': True,
+                'anchor': 'center'
+            })
+
+            # Configurar heading
             self.results_tree.heading(col, text=col, anchor='center')
-            # Ancho basado en el contenido
-            max_width = len(col) * 10  # Ancho mínimo basado en el header
 
-            # Calcular ancho máximo basado en contenido
-            for row in results:
-                col_index = columns.index(col)
-                if col_index < len(row):
-                    cell_value = str(row[col_index]) if row[col_index] is not None else ''
-                    cell_width = len(cell_value) * 8
-                    max_width = max(max_width, cell_width)
-
-            # Establecer ancho (mínimo 100, máximo 300)
-            max_width = min(max(max_width, 100), 300)
-            self.results_tree.column(col, width=max_width, anchor='center', minwidth=80)
+            # Configurar columna con valores FIJOS
+            self.results_tree.column(
+                col,
+                width=config['width'],
+                minwidth=config['minwidth'],
+                stretch=config['stretch'],
+                anchor=config['anchor']
+            )
 
         # No mostrar la columna tree
         self.results_tree.column('#0', width=0, stretch=False)
 
         # Insertar resultados con filas alternadas
         for idx, row in enumerate(results):
+            # Convertir cada valor a string y manejar None
+            values = []
+            for i, val in enumerate(row):
+                if val is None:
+                    values.append('')
+                else:
+                    values.append(str(val))
+
             tag = 'evenrow' if idx % 2 == 0 else 'oddrow'
-            self.results_tree.insert('', tk.END, values=row, tags=(tag,))
+            self.results_tree.insert('', tk.END, values=tuple(values), tags=(tag,))
 
     def add_new_user_dialog(self):
         """ERROR 8: Diálogo completo para agregar nuevo usuario con validación"""
@@ -1048,7 +1086,7 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
 
         # Cargar unidades de negocio
         try:
-            self.cursor.execute("SELECT IdUnidadDeNegocio, NombreUnidad FROM dbo.Instituto_UnidadDeNegocio ORDER BY NombreUnidad")
+            self.cursor.execute("SELECT IdUnidadDeNegocio, NombreUnidad FROM Instituto_UnidadDeNegocio ORDER BY NombreUnidad")
             unidades = self.cursor.fetchall()
             entries['unidad']['values'] = [f"{u[0]} - {u[1]}" for u in unidades]
             entries['unidad_data'] = {f"{u[0]} - {u[1]}": u[0] for u in unidades}
@@ -1131,14 +1169,14 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
 
             try:
                 # Verificar si el usuario ya existe
-                self.cursor.execute("SELECT UserId FROM dbo.Instituto_Usuario WHERE UserId = ?", (user_id,))
+                self.cursor.execute("SELECT UserId FROM Instituto_Usuario WHERE UserId = ?", (user_id,))
                 if self.cursor.fetchone():
                     messagebox.showerror("Error", f"El usuario {user_id} ya existe en la base de datos")
                     return
 
                 # Insertar nuevo usuario
                 self.cursor.execute("""
-                    INSERT INTO dbo.Instituto_Usuario
+                    INSERT INTO Instituto_Usuario
                     (UserId, Nombre, Email, IdUnidadDeNegocio, Nivel, Division, Activo)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (user_id, nombre, email, id_unidad, nivel or None, division or None, activo))
@@ -1184,7 +1222,7 @@ Porcentaje Completado: {(result[0]/result[3]*100):.1f}%
 
         # Cargar módulos existentes
         try:
-            self.cursor.execute("SELECT * FROM dbo.Instituto_Modulo")
+            self.cursor.execute("SELECT * FROM Instituto_Modulo")
             for row in self.cursor.fetchall():
                 tree.insert('', tk.END, values=row)
         except Exception as e:

@@ -368,38 +368,62 @@ class MainWindow:
                  foreground='orange').pack()
 
     def load_modulos_list(self):
-        """Cargar lista de módulos con datos de ejemplo"""
-        # Datos de ejemplo - reemplazar con consulta real a BD
-        modulos_ejemplo = [
-            "MÓDULO 1.1 - Introducción a la Seguridad",
-            "MÓDULO 1.2 - Protección de Datos",
-            "MÓDULO 1.3 - Ciberseguridad Básica",
-            "MÓDULO 1.4 - Gestión de Riesgos",
-            "MÓDULO 1.5 - Compliance y Normativas",
-            "MÓDULO 1.6 - Auditoría Interna",
-            "MÓDULO 1.7 - Protección de Infraestructura",
-            "MÓDULO 1.8 - Respuesta a Incidentes",
-            "MÓDULO 1.9 - Seguridad en la Nube",
-            "MÓDULO 1.10 - Gestión de Identidades"
-        ]
+        """Cargar lista de módulos desde la base de datos"""
+        try:
+            # Consultar módulos reales de la base de datos
+            self.cursor.execute("""
+                SELECT IdModulo, NombreModulo
+                FROM dbo.Instituto_Modulo
+                WHERE Activo = 1
+                ORDER BY IdModulo
+            """)
 
-        for modulo in modulos_ejemplo:
-            self.modulos_listbox.insert(tk.END, modulo)
+            modulos = self.cursor.fetchall()
+
+            if modulos:
+                for modulo in modulos:
+                    id_modulo = modulo[0]
+                    nombre_modulo = modulo[1]
+                    # Formato: "ID - Nombre"
+                    display_text = f"{id_modulo} - {nombre_modulo}"
+                    self.modulos_listbox.insert(tk.END, display_text)
+            else:
+                # Si no hay módulos, mostrar mensaje
+                self.modulos_listbox.insert(tk.END, "No hay módulos registrados")
+
+        except Exception as e:
+            print(f"Error cargando módulos: {e}")
+            self.modulos_listbox.insert(tk.END, "Error al cargar módulos")
+            import traceback
+            traceback.print_exc()
 
     def load_unidades_list(self):
-        """Cargar lista de unidades de negocio con datos de ejemplo"""
-        # Datos de ejemplo - reemplazar con consulta real a BD
-        unidades_ejemplo = [
-            "LCIT - Lázaro Cárdenas International Terminal",
-            "LCT - Lázaro Cárdenas Terminal",
-            "TNG - Tuxpan Nautical Group",
-            "EIT - Ensenada International Terminal",
-            "VOPAK - Terminal Química",
-            "SSA México - Servicios Portuarios"
-        ]
+        """Cargar lista de unidades de negocio desde la base de datos"""
+        try:
+            # Consultar unidades reales de la base de datos
+            self.cursor.execute("""
+                SELECT IdUnidadDeNegocio, NombreUnidad
+                FROM dbo.Instituto_UnidadDeNegocio
+                ORDER BY NombreUnidad
+            """)
 
-        for unidad in unidades_ejemplo:
-            self.unidades_listbox.insert(tk.END, unidad)
+            unidades = self.cursor.fetchall()
+
+            if unidades:
+                for unidad in unidades:
+                    id_unidad = unidad[0]
+                    nombre_unidad = unidad[1]
+                    # Formato: "Nombre"
+                    self.unidades_listbox.insert(tk.END, nombre_unidad)
+            else:
+                # Si no hay unidades, mostrar mensaje
+                self.unidades_listbox.insert(tk.END, "No hay unidades registradas")
+
+        except Exception as e:
+            print(f"Error cargando unidades de negocio: {e}")
+            self.unidades_listbox.insert(tk.END, "Error al cargar unidades")
+            import traceback
+            traceback.print_exc()
 
     def on_modulo_select(self, event):
         """Evento cuando se selecciona un módulo"""
@@ -412,10 +436,16 @@ class MainWindow:
 
         # Obtener módulo seleccionado
         index = selection[0]
-        modulo = self.modulos_listbox.get(index)
+        modulo_text = self.modulos_listbox.get(index)
+
+        # Extraer IdModulo del formato "ID - Nombre"
+        try:
+            modulo_id = int(modulo_text.split(' - ')[0])
+        except:
+            modulo_id = index + 1  # Fallback
 
         # Actualizar gráfica y tabla
-        self.update_chart_for_modulo(modulo, index + 1)
+        self.update_chart_for_modulo(modulo_text, modulo_id)
 
     def on_unidad_select(self, event):
         """Evento cuando se selecciona una unidad de negocio"""
@@ -433,15 +463,15 @@ class MainWindow:
         # Actualizar gráfica y tabla
         self.update_chart_for_unidad(unidad)
 
-    def update_chart_for_modulo(self, modulo, modulo_num):
+    def update_chart_for_modulo(self, modulo_text, modulo_id):
         """Actualizar gráfica y tabla para un módulo específico"""
         # Limpiar contenedor
         for widget in self.chart_container.winfo_children():
             widget.destroy()
 
-        # Datos de ejemplo para el módulo
+        # Datos de ejemplo para el módulo (usar modulo_id como seed para consistencia)
         import random
-        random.seed(modulo_num)
+        random.seed(modulo_id)
 
         completados = random.randint(20, 80)
         en_proceso = random.randint(10, 40)
@@ -469,7 +499,9 @@ class MainWindow:
             autotext.set_weight('bold')
             autotext.set_fontsize(9)
 
-        ax.set_title(f'Estado de {modulo[:17]}...', color='white', fontsize=12, pad=20)
+        # Título con el nombre del módulo (truncar si es muy largo)
+        titulo_corto = modulo_text if len(modulo_text) <= 35 else modulo_text[:32] + '...'
+        ax.set_title(f'Estado: {titulo_corto}', color='white', fontsize=11, pad=20)
 
         canvas = FigureCanvasTkAgg(fig, self.chart_container)
         canvas.draw()
@@ -477,7 +509,10 @@ class MainWindow:
 
         # Actualizar tabla de datos
         self.data_tree.delete(*self.data_tree.get_children())
-        self.data_tree.insert('', tk.END, values=('Módulo', modulo[:25] + '...'))
+        # Mostrar nombre completo en la tabla si es necesario
+        modulo_display = modulo_text if len(modulo_text) <= 30 else modulo_text[:27] + '...'
+        self.data_tree.insert('', tk.END, values=('Módulo', modulo_display))
+        self.data_tree.insert('', tk.END, values=('ID Módulo', modulo_id))
         self.data_tree.insert('', tk.END, values=('─' * 25, '─' * 10))
         self.data_tree.insert('', tk.END, values=('Completados', f'{completados}%'))
         self.data_tree.insert('', tk.END, values=('En Proceso', f'{en_proceso}%'))

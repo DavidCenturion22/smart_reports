@@ -236,10 +236,10 @@ class MainWindow:
             self.log_movement(traceback.format_exc())
 
     def show_dashboards_panel(self):
-        """Panel de dashboards con gráficas interactivas"""
+        """Panel de dashboards con listas laterales y gráficas dinámicas"""
         self.clear_content_area()
 
-        # Frame principal con estilo del tema
+        # Frame principal
         main_frame = ttk.Frame(self.content_area, bootstyle='default')
         main_frame.pack(fill=BOTH, expand=True)
 
@@ -247,47 +247,305 @@ class MainWindow:
         title_frame = ttk.Frame(main_frame)
         title_frame.pack(fill=X, padx=20, pady=10)
 
-        title = ttk.Label(title_frame, text="📊 Dashboards - Instituto HP",
+        title = ttk.Label(title_frame, text="📊 Dashboards - INSTITUTO HP",
                          font=('Arial', 20, 'bold'))
         title.pack(side=LEFT)
 
         # Botón de refrescar
-        ttk.Button(title_frame, text="🔄 Actualizar Gráficas",
+        ttk.Button(title_frame, text="🔄 Actualizar",
                   command=self.refresh_dashboards,
                   bootstyle='info-outline').pack(side=RIGHT)
 
-        # Información de datos
+        # Información
         info_label = ttk.Label(main_frame,
-                              text="Haz clic en cualquier gráfica para ver los datos detallados",
+                              text="Selecciona un módulo o unidad de negocio para ver sus estadísticas",
                               font=('Arial', 10, 'italic'),
                               foreground='gray')
         info_label.pack(pady=5)
 
-        # Separador
         ttk.Separator(main_frame, orient='horizontal').pack(fill=X, padx=20, pady=5)
 
-        # Frame para gráficas con scrollbar
-        canvas_frame = ttk.Frame(main_frame)
-        canvas_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
+        # Frame de contenido (3 paneles)
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
-        # Crear canvas con scrollbar
-        canvas = tk.Canvas(canvas_frame, bg='#2b3e50')  # Fondo del tema darkly
-        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, bootstyle='default')
+        # ============= PANEL IZQUIERDO: LISTAS =============
+        left_panel = ttk.Frame(content_frame, width=250)
+        left_panel.pack(side=LEFT, fill=Y, padx=(0, 10))
+        left_panel.pack_propagate(False)
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        # Lista 1: MÓDULOS
+        modulos_frame = ttk.LabelFrame(left_panel, text="📚 Módulos", padding=10, bootstyle='primary')
+        modulos_frame.pack(fill=BOTH, expand=True, pady=(0, 10))
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Scrollbar para lista de módulos
+        modulos_scroll = ttk.Scrollbar(modulos_frame, orient="vertical")
+        modulos_scroll.pack(side=RIGHT, fill=Y)
 
-        canvas.pack(side=LEFT, fill=BOTH, expand=True)
-        scrollbar.pack(side=RIGHT, fill=Y)
+        self.modulos_listbox = tk.Listbox(modulos_frame,
+                                          yscrollcommand=modulos_scroll.set,
+                                          font=('Arial', 10),
+                                          selectmode=tk.SINGLE,
+                                          activestyle='dotbox')
+        self.modulos_listbox.pack(side=LEFT, fill=BOTH, expand=True)
+        modulos_scroll.config(command=self.modulos_listbox.yview)
 
-        # Crear gráficas interactivas
-        self.create_interactive_charts(scrollable_frame)
+        # Cargar módulos de ejemplo
+        self.load_modulos_list()
+
+        # Evento de selección
+        self.modulos_listbox.bind('<<ListboxSelect>>', self.on_modulo_select)
+
+        # Lista 2: UNIDADES DE NEGOCIO
+        unidades_frame = ttk.LabelFrame(left_panel, text="🏢 Unidades de Negocio", padding=10, bootstyle='info')
+        unidades_frame.pack(fill=BOTH, expand=True)
+
+        unidades_scroll = ttk.Scrollbar(unidades_frame, orient="vertical")
+        unidades_scroll.pack(side=RIGHT, fill=Y)
+
+        self.unidades_listbox = tk.Listbox(unidades_frame,
+                                           yscrollcommand=unidades_scroll.set,
+                                           font=('Arial', 10),
+                                           selectmode=tk.SINGLE,
+                                           activestyle='dotbox')
+        self.unidades_listbox.pack(side=LEFT, fill=BOTH, expand=True)
+        unidades_scroll.config(command=self.unidades_listbox.yview)
+
+        # Cargar unidades de ejemplo
+        self.load_unidades_list()
+
+        # Evento de selección
+        self.unidades_listbox.bind('<<ListboxSelect>>', self.on_unidad_select)
+
+        # ============= PANEL CENTRAL: GRÁFICA =============
+        center_panel = ttk.LabelFrame(content_frame, text="📈 Gráfica", padding=10, bootstyle='success')
+        center_panel.pack(side=LEFT, fill=BOTH, expand=True, padx=(0, 10))
+
+        # Frame para la gráfica
+        self.chart_container = ttk.Frame(center_panel)
+        self.chart_container.pack(fill=BOTH, expand=True)
+
+        # Mensaje inicial
+        initial_label = ttk.Label(self.chart_container,
+                                 text="Selecciona un elemento\nde las listas para ver la gráfica",
+                                 font=('Arial', 14),
+                                 foreground='gray',
+                                 justify='center')
+        initial_label.pack(expand=True)
+
+        # ============= PANEL DERECHO: TABLA DE DATOS =============
+        right_panel = ttk.LabelFrame(content_frame, text="📋 Datos", padding=10, bootstyle='warning', width=300)
+        right_panel.pack(side=RIGHT, fill=BOTH, padx=(0, 0))
+        right_panel.pack_propagate(False)
+
+        # Scrollbar para tabla
+        table_scroll = ttk.Scrollbar(right_panel, orient="vertical")
+        table_scroll.pack(side=RIGHT, fill=Y)
+
+        # Treeview para datos
+        self.data_tree = ttk.Treeview(right_panel,
+                                     columns=('Categoría', 'Valor'),
+                                     show='headings',
+                                     yscrollcommand=table_scroll.set,
+                                     height=15)
+        self.data_tree.pack(side=LEFT, fill=BOTH, expand=True)
+        table_scroll.config(command=self.data_tree.yview)
+
+        self.data_tree.heading('Categoría', text='Categoría')
+        self.data_tree.heading('Valor', text='Valor')
+        self.data_tree.column('Categoría', width=150, anchor='w')
+        self.data_tree.column('Valor', width=100, anchor='center')
+
+        # Mensaje inicial en tabla
+        self.data_tree.insert('', tk.END, values=('Sin datos', '-'))
+
+        # Nota
+        note_frame = ttk.Frame(main_frame)
+        note_frame.pack(fill=X, pady=10)
+        ttk.Label(note_frame,
+                 text="ℹ️  Datos de ejemplo. Se actualizarán al cargar datos reales.",
+                 font=('Arial', 9, 'italic'),
+                 foreground='orange').pack()
+
+    def load_modulos_list(self):
+        """Cargar lista de módulos con datos de ejemplo"""
+        # Datos de ejemplo - reemplazar con consulta real a BD
+        modulos_ejemplo = [
+            "MÓDULO 1.1 - Introducción a la Seguridad",
+            "MÓDULO 1.2 - Protección de Datos",
+            "MÓDULO 1.3 - Ciberseguridad Básica",
+            "MÓDULO 1.4 - Gestión de Riesgos",
+            "MÓDULO 1.5 - Compliance y Normativas",
+            "MÓDULO 1.6 - Auditoría Interna",
+            "MÓDULO 1.7 - Protección de Infraestructura",
+            "MÓDULO 1.8 - Respuesta a Incidentes",
+            "MÓDULO 1.9 - Seguridad en la Nube",
+            "MÓDULO 1.10 - Gestión de Identidades"
+        ]
+
+        for modulo in modulos_ejemplo:
+            self.modulos_listbox.insert(tk.END, modulo)
+
+    def load_unidades_list(self):
+        """Cargar lista de unidades de negocio con datos de ejemplo"""
+        # Datos de ejemplo - reemplazar con consulta real a BD
+        unidades_ejemplo = [
+            "LCIT - Lázaro Cárdenas International Terminal",
+            "LCT - Lázaro Cárdenas Terminal",
+            "TNG - Tuxpan Nautical Group",
+            "EIT - Ensenada International Terminal",
+            "VOPAK - Terminal Química",
+            "SSA México - Servicios Portuarios"
+        ]
+
+        for unidad in unidades_ejemplo:
+            self.unidades_listbox.insert(tk.END, unidad)
+
+    def on_modulo_select(self, event):
+        """Evento cuando se selecciona un módulo"""
+        selection = self.modulos_listbox.curselection()
+        if not selection:
+            return
+
+        # Deseleccionar unidades
+        self.unidades_listbox.selection_clear(0, tk.END)
+
+        # Obtener módulo seleccionado
+        index = selection[0]
+        modulo = self.modulos_listbox.get(index)
+
+        # Actualizar gráfica y tabla
+        self.update_chart_for_modulo(modulo, index + 1)
+
+    def on_unidad_select(self, event):
+        """Evento cuando se selecciona una unidad de negocio"""
+        selection = self.unidades_listbox.curselection()
+        if not selection:
+            return
+
+        # Deseleccionar módulos
+        self.modulos_listbox.selection_clear(0, tk.END)
+
+        # Obtener unidad seleccionada
+        index = selection[0]
+        unidad = self.unidades_listbox.get(index)
+
+        # Actualizar gráfica y tabla
+        self.update_chart_for_unidad(unidad)
+
+    def update_chart_for_modulo(self, modulo, modulo_num):
+        """Actualizar gráfica y tabla para un módulo específico"""
+        # Limpiar contenedor
+        for widget in self.chart_container.winfo_children():
+            widget.destroy()
+
+        # Datos de ejemplo para el módulo
+        import random
+        random.seed(modulo_num)
+
+        completados = random.randint(20, 80)
+        en_proceso = random.randint(10, 40)
+        registrados = random.randint(5, 30)
+        no_iniciados = 100 - completados - en_proceso - registrados
+
+        # Crear gráfica de pastel
+        fig, ax = plt.subplots(figsize=(6, 5))
+        fig.patch.set_facecolor('#2b3e50')
+        ax.set_facecolor('#2b3e50')
+
+        labels = ['Completado', 'En Proceso', 'Registrado', 'No Iniciado']
+        values = [completados, en_proceso, registrados, no_iniciados]
+        colors = ['#82B366', '#FEB236', '#88B0D3', '#E15759']
+
+        wedges, texts, autotexts = ax.pie(values, labels=labels,
+                                           colors=colors, autopct='%1.1f%%',
+                                           startangle=90)
+
+        for text in texts:
+            text.set_color('white')
+            text.set_fontsize(10)
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_weight('bold')
+            autotext.set_fontsize(9)
+
+        ax.set_title(f'Estado de {modulo[:17]}...', color='white', fontsize=12, pad=20)
+
+        canvas = FigureCanvasTkAgg(fig, self.chart_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        # Actualizar tabla de datos
+        self.data_tree.delete(*self.data_tree.get_children())
+        self.data_tree.insert('', tk.END, values=('Módulo', modulo[:25] + '...'))
+        self.data_tree.insert('', tk.END, values=('─' * 25, '─' * 10))
+        self.data_tree.insert('', tk.END, values=('Completados', f'{completados}%'))
+        self.data_tree.insert('', tk.END, values=('En Proceso', f'{en_proceso}%'))
+        self.data_tree.insert('', tk.END, values=('Registrados', f'{registrados}%'))
+        self.data_tree.insert('', tk.END, values=('No Iniciados', f'{no_iniciados}%'))
+        self.data_tree.insert('', tk.END, values=('─' * 25, '─' * 10))
+        self.data_tree.insert('', tk.END, values=('Total Usuarios', random.randint(80, 150)))
+        self.data_tree.insert('', tk.END, values=('Promedio Calif.', f'{random.randint(75, 95)}.{random.randint(0,9)}'))
+
+    def update_chart_for_unidad(self, unidad):
+        """Actualizar gráfica y tabla para una unidad de negocio"""
+        # Limpiar contenedor
+        for widget in self.chart_container.winfo_children():
+            widget.destroy()
+
+        # Datos de ejemplo para la unidad
+        import random
+        unidad_sigla = unidad.split(' - ')[0]
+        random.seed(len(unidad_sigla))
+
+        # Generar datos de ejemplo por módulo
+        modulos = [f'Módulo {i}' for i in range(1, 11)]
+        completados = [random.randint(10, 50) for _ in range(10)]
+
+        # Crear gráfica de barras
+        fig, ax = plt.subplots(figsize=(6, 5))
+        fig.patch.set_facecolor('#2b3e50')
+        ax.set_facecolor('#2b3e50')
+
+        bars = ax.bar(range(len(modulos)), completados, color='#6B5B95', edgecolor='white', linewidth=0.7)
+
+        # Colorear barras según nivel
+        for i, bar in enumerate(bars):
+            if completados[i] > 40:
+                bar.set_color('#82B366')  # Verde
+            elif completados[i] > 25:
+                bar.set_color('#FEB236')  # Amarillo
+            else:
+                bar.set_color('#E15759')  # Rojo
+
+        ax.set_xlabel('Módulos', color='white', fontsize=10)
+        ax.set_ylabel('Usuarios Completados', color='white', fontsize=10)
+        ax.set_title(f'Progreso por Módulo - {unidad_sigla}', color='white', fontsize=12, pad=20)
+        ax.set_xticks(range(len(modulos)))
+        ax.set_xticklabels([f'M{i+1}' for i in range(10)], color='white')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.grid(True, alpha=0.2, color='white', axis='y')
+
+        canvas = FigureCanvasTkAgg(fig, self.chart_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        # Actualizar tabla de datos
+        self.data_tree.delete(*self.data_tree.get_children())
+        self.data_tree.insert('', tk.END, values=('Unidad de Negocio', unidad_sigla))
+        self.data_tree.insert('', tk.END, values=('─' * 25, '─' * 10))
+
+        for i, (mod, comp) in enumerate(zip(modulos, completados)):
+            self.data_tree.insert('', tk.END, values=(mod, f'{comp} usuarios'))
+
+        self.data_tree.insert('', tk.END, values=('─' * 25, '─' * 10))
+        total_usuarios = random.randint(100, 200)
+        self.data_tree.insert('', tk.END, values=('Total Empleados', total_usuarios))
+        self.data_tree.insert('', tk.END, values=('Promedio Avance', f'{sum(completados)//10} usuarios'))
 
     def show_consultas_panel(self):
         """Panel de consultas"""
@@ -497,204 +755,38 @@ class MainWindow:
         except Exception as e:
             print(f"Error al guardar en historial: {e}")
 
-    def create_interactive_charts(self, parent):
-        """Crear gráficas interactivas con datos de ejemplo"""
+    # ========== FUNCIONES ANTIGUAS COMENTADAS (NO SE USAN CON NUEVO DISEÑO) ==========
+    # def create_interactive_charts(self, parent):
+    #     """DEPRECATED: Usar nuevo diseño con listas laterales"""
+    #     pass
 
-        # Datos de ejemplo
-        self.chart_data = {
-            'estados_modulos': {
-                'labels': ['Completado', 'En proceso', 'Registrado'],
-                'values': [45, 30, 25],
-                'title': 'Estado de Módulos'
-            },
-            'usuarios_unidad': {
-                'labels': ['LCIT', 'LCT', 'TNG', 'EIT'],
-                'values': [120, 95, 78, 110],
-                'title': 'Usuarios por Unidad de Negocio'
-            },
-            'progreso_mensual': {
-                'labels': ['Ene', 'Feb', 'Mar', 'Abr', 'May'],
-                'values': [20, 35, 45, 60, 75],
-                'title': 'Módulos Completados por Mes'
-            },
-            'tasa_finalizacion': {
-                'labels': ['Diplomado 1', 'Diplomado 2'],
-                'values': [78, 65],
-                'title': 'Tasa de Finalización (%)'
-            }
-        }
+    # def create_pie_chart(self, parent, data_key):
+    #     """DEPRECATED"""
+    #     pass
 
-        # Crear 4 frames para las gráficas (2x2)
-        row1 = ttk.Frame(parent)
-        row1.pack(fill=BOTH, expand=True, pady=10)
+    # def create_bar_chart(self, parent, data_key):
+    #     """DEPRECATED"""
+    #     pass
 
-        row2 = ttk.Frame(parent)
-        row2.pack(fill=BOTH, expand=True, pady=10)
+    # def create_line_chart(self, parent, data_key):
+    #     """DEPRECATED"""
+    #     pass
 
-        # Gráfica 1: Pie Chart - Estado de Módulos
-        chart1_frame = ttk.LabelFrame(row1, text="Estado de Módulos", padding=10, bootstyle='primary')
-        chart1_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
-        self.create_pie_chart(chart1_frame, 'estados_modulos')
+    # def create_horizontal_bar_chart(self, parent, data_key):
+    #     """DEPRECATED"""
+    #     pass
 
-        # Gráfica 2: Bar Chart - Usuarios por Unidad
-        chart2_frame = ttk.LabelFrame(row1, text="Usuarios por Unidad de Negocio", padding=10, bootstyle='info')
-        chart2_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
-        self.create_bar_chart(chart2_frame, 'usuarios_unidad')
-
-        # Gráfica 3: Line Chart - Progreso Mensual
-        chart3_frame = ttk.LabelFrame(row2, text="Módulos Completados por Mes", padding=10, bootstyle='success')
-        chart3_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
-        self.create_line_chart(chart3_frame, 'progreso_mensual')
-
-        # Gráfica 4: Horizontal Bar - Tasa Finalización
-        chart4_frame = ttk.LabelFrame(row2, text="Tasa de Finalización por Diplomado", padding=10, bootstyle='warning')
-        chart4_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
-        self.create_horizontal_bar_chart(chart4_frame, 'tasa_finalizacion')
-
-        # Nota sobre datos de ejemplo
-        note_frame = ttk.Frame(parent)
-        note_frame.pack(fill=X, pady=20)
-        ttk.Label(note_frame,
-                 text="ℹ️  Los datos mostrados son de ejemplo. Se actualizarán con datos reales al cargar el archivo Transcript.",
-                 font=('Arial', 9, 'italic'),
-                 foreground='orange').pack()
-
-    def create_pie_chart(self, parent, data_key):
-        """Crear gráfica de pastel interactiva"""
-        data = self.chart_data[data_key]
-        fig, ax = plt.subplots(figsize=(5, 4))
-        fig.patch.set_facecolor('#2b3e50')
-        ax.set_facecolor('#2b3e50')
-
-        colors = ['#82B366', '#FEB236', '#88B0D3']
-        wedges, texts, autotexts = ax.pie(data['values'], labels=data['labels'],
-                                           colors=colors, autopct='%1.1f%%',
-                                           startangle=90)
-
-        for text in texts:
-            text.set_color('white')
-        for autotext in autotexts:
-            autotext.set_color('white')
-            autotext.set_weight('bold')
-
-        canvas = FigureCanvasTkAgg(fig, parent)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
-
-        # Hacer clickeable
-        canvas.mpl_connect('button_press_event',
-                          lambda event: self.show_chart_data(data_key))
-
-    def create_bar_chart(self, parent, data_key):
-        """Crear gráfica de barras interactiva"""
-        data = self.chart_data[data_key]
-        fig, ax = plt.subplots(figsize=(5, 4))
-        fig.patch.set_facecolor('#2b3e50')
-        ax.set_facecolor('#2b3e50')
-
-        ax.bar(data['labels'], data['values'], color='#6B5B95')
-        ax.set_ylabel('Número de Usuarios', color='white')
-        ax.tick_params(colors='white')
-        ax.spines['bottom'].set_color('white')
-        ax.spines['left'].set_color('white')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-
-        canvas = FigureCanvasTkAgg(fig, parent)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
-
-        canvas.mpl_connect('button_press_event',
-                          lambda event: self.show_chart_data(data_key))
-
-    def create_line_chart(self, parent, data_key):
-        """Crear gráfica de línea interactiva"""
-        data = self.chart_data[data_key]
-        fig, ax = plt.subplots(figsize=(5, 4))
-        fig.patch.set_facecolor('#2b3e50')
-        ax.set_facecolor('#2b3e50')
-
-        ax.plot(data['labels'], data['values'], marker='o',
-               color='#82B366', linewidth=2, markersize=8)
-        ax.set_ylabel('Módulos Completados', color='white')
-        ax.tick_params(colors='white')
-        ax.grid(True, alpha=0.3, color='white')
-        ax.spines['bottom'].set_color('white')
-        ax.spines['left'].set_color('white')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-
-        canvas = FigureCanvasTkAgg(fig, parent)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
-
-        canvas.mpl_connect('button_press_event',
-                          lambda event: self.show_chart_data(data_key))
-
-    def create_horizontal_bar_chart(self, parent, data_key):
-        """Crear gráfica de barras horizontales interactiva"""
-        data = self.chart_data[data_key]
-        fig, ax = plt.subplots(figsize=(5, 4))
-        fig.patch.set_facecolor('#2b3e50')
-        ax.set_facecolor('#2b3e50')
-
-        colors = ['#88B0D3', '#FEB236']
-        ax.barh(data['labels'], data['values'], color=colors)
-        ax.set_xlabel('Porcentaje', color='white')
-        ax.tick_params(colors='white')
-        ax.spines['bottom'].set_color('white')
-        ax.spines['left'].set_color('white')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-
-        canvas = FigureCanvasTkAgg(fig, parent)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
-
-        canvas.mpl_connect('button_press_event',
-                          lambda event: self.show_chart_data(data_key))
-
-    def show_chart_data(self, data_key):
-        """Mostrar datos de la gráfica en una tabla popup"""
-        data = self.chart_data[data_key]
-
-        # Crear ventana popup
-        popup = tk.Toplevel(self.root)
-        popup.title(f"Datos: {data['title']}")
-        popup.geometry("500x400")
-
-        # Título
-        ttk.Label(popup, text=data['title'],
-                 font=('Arial', 14, 'bold')).pack(pady=10)
-
-        # Tabla de datos
-        tree_frame = ttk.Frame(popup)
-        tree_frame.pack(fill=BOTH, expand=True, padx=20, pady=10)
-
-        tree = ttk.Treeview(tree_frame, columns=('Categoría', 'Valor'),
-                           show='headings', height=10)
-        tree.heading('Categoría', text='Categoría')
-        tree.heading('Valor', text='Valor')
-        tree.column('Categoría', width=250, anchor='center')
-        tree.column('Valor', width=150, anchor='center')
-
-        # Insertar datos
-        for label, value in zip(data['labels'], data['values']):
-            tree.insert('', tk.END, values=(label, value))
-
-        tree.pack(fill=BOTH, expand=True)
-
-        # Botón cerrar
-        ttk.Button(popup, text="Cerrar",
-                  command=popup.destroy,
-                  bootstyle='secondary').pack(pady=10)
+    # def show_chart_data(self, data_key):
+    #     """DEPRECATED"""
+    #     pass
 
     def refresh_dashboards(self):
-        """Refrescar dashboards con datos actuales"""
+        """Refrescar dashboards - recargar panel completo"""
         try:
-            # TODO: Cuando haya datos reales, actualizar desde BD
-            messagebox.showinfo("Actualizar Gráficas",
-                "Las gráficas se actualizarán automáticamente cuando se carguen datos reales desde el archivo Transcript.")
+            # Recargar el panel de dashboards completo
+            self.show_dashboards_panel()
+            messagebox.showinfo("Actualizar",
+                "Panel de dashboards actualizado. Selecciona un módulo o unidad para ver sus estadísticas.")
         except Exception as e:
             messagebox.showerror("Error", f"Error al actualizar dashboards: {str(e)}")
 
